@@ -30,7 +30,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <LanguageContext.Provider value={{ locale, setLocale, t: translations[locale] }}>
+    <LanguageContext.Provider value={{ locale, setLocale, t: translations[locale] as typeof translations.zh }}>
       {children}
     </LanguageContext.Provider>
   );
