@@ -49,7 +49,7 @@ ${pastContentSummary}
 
 只输出 JSON，不要有其他文字。`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
     const result = await model.generateContent(prompt);
     const text = result.response.text();
 
