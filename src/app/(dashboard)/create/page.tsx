@@ -1,16 +1,15 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const PLATFORMS = ["小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
-const CONTENT_TYPES = [
-  { value: "graphic", label: "图文", desc: "适合图文发布" },
-  { value: "script", label: "口播逐字稿", desc: "适合真人出镜" },
-];
 
 function CreatePageInner() {
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
+
   const [title, setTitle] = useState(searchParams.get("title") || "");
   const [angle, setAngle] = useState(searchParams.get("angle") || "");
   const [platform, setPlatform] = useState("小红书");
@@ -25,9 +24,14 @@ function CreatePageInner() {
 
   const topicId = searchParams.get("topicId") || "";
 
+  const CONTENT_TYPES = [
+    { value: "graphic", label: t.graphic, desc: t.graphic === "图文" ? "适合图文发布" : "Great for articles & posts" },
+    { value: "script", label: t.script, desc: t.script === "口播逐字稿" ? "适合真人出镜" : "Great for video creators" },
+  ];
+
   const generate = async () => {
     if (!title.trim()) {
-      alert("请输入选题标题");
+      alert(t.topicTitleLabel);
       return;
     }
     setLoading(true);
@@ -46,10 +50,10 @@ function CreatePageInner() {
         setGeneratedContent(data.content);
         setLimitReached(false);
       } else {
-        alert(data.error || "生成失败");
+        alert(data.error || t.error);
       }
     } catch {
-      alert("生成失败，请重试");
+      alert(t.error);
     } finally {
       setLoading(false);
     }
@@ -75,10 +79,10 @@ function CreatePageInner() {
       if (data.item) {
         setSaved(true);
       } else {
-        alert("保存失败");
+        alert(t.error);
       }
     } catch {
-      alert("保存失败");
+      alert(t.error);
     } finally {
       setSaving(false);
     }
@@ -96,12 +100,12 @@ function CreatePageInner() {
       <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5">
         <div className="flex items-center gap-4">
           <Link href="/topics" className="text-xs text-white/30 hover:text-white/60 transition-colors">
-            ← 选题雷达
+            ← {t.topicRadar}
           </Link>
-          <span className="text-sm font-semibold">内容工厂</span>
+          <span className="text-sm font-semibold">{t.contentFactory}</span>
         </div>
         <Link href="/library" className="text-xs text-white/30 hover:text-white/60 transition-colors">
-          内容库
+          {t.library}
         </Link>
       </nav>
 
@@ -110,37 +114,37 @@ function CreatePageInner() {
           {/* Left: Config */}
           <div className="space-y-6">
             <div className="space-y-1">
-              <h1 className="text-xl font-bold">生成内容</h1>
-              <p className="text-xs text-white/30">基于你的创作者 DNA，生成个性化内容</p>
+              <h1 className="text-xl font-bold">{t.createTitle}</h1>
+              <p className="text-xs text-white/30">{t.noProfileDesc}</p>
             </div>
 
             {/* Title */}
             <div className="space-y-2">
-              <label className="text-xs text-white/40">选题标题 *</label>
+              <label className="text-xs text-white/40">{t.topicTitleLabel} *</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="输入你的选题..."
+                placeholder={t.topicTitlePlaceholder}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors"
               />
             </div>
 
             {/* Angle */}
             <div className="space-y-2">
-              <label className="text-xs text-white/40">创作角度（选填）</label>
+              <label className="text-xs text-white/40">{t.angleLabel}</label>
               <input
                 type="text"
                 value={angle}
                 onChange={(e) => setAngle(e.target.value)}
-                placeholder="如：从个人经历切入、反常识视角..."
+                placeholder={t.anglePlaceholder}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors"
               />
             </div>
 
             {/* Platform */}
             <div className="space-y-2">
-              <label className="text-xs text-white/40">目标平台</label>
+              <label className="text-xs text-white/40">{t.platformLabel}</label>
               <div className="flex flex-wrap gap-2">
                 {PLATFORMS.map((p) => (
                   <button
@@ -160,20 +164,20 @@ function CreatePageInner() {
 
             {/* Content Type */}
             <div className="space-y-2">
-              <label className="text-xs text-white/40">内容类型</label>
+              <label className="text-xs text-white/40">{t.contentTypeLabel}</label>
               <div className="grid grid-cols-2 gap-3">
-                {CONTENT_TYPES.map((t) => (
+                {CONTENT_TYPES.map((ct) => (
                   <button
-                    key={t.value}
-                    onClick={() => setContentType(t.value)}
+                    key={ct.value}
+                    onClick={() => setContentType(ct.value)}
                     className={`p-3 rounded-xl border text-left transition-all ${
-                      contentType === t.value
+                      contentType === ct.value
                         ? "border-white/30 bg-white/5"
                         : "border-white/8 hover:border-white/20"
                     }`}
                   >
-                    <p className="text-sm font-medium">{t.label}</p>
-                    <p className="text-xs text-white/30 mt-0.5">{t.desc}</p>
+                    <p className="text-sm font-medium">{ct.label}</p>
+                    <p className="text-xs text-white/30 mt-0.5">{ct.desc}</p>
                   </button>
                 ))}
               </div>
@@ -181,11 +185,11 @@ function CreatePageInner() {
 
             {/* Additional Context */}
             <div className="space-y-2">
-              <label className="text-xs text-white/40">补充说明（选填）</label>
+              <label className="text-xs text-white/40">{t.additionalLabel}</label>
               <textarea
                 value={additionalContext}
                 onChange={(e) => setAdditionalContext(e.target.value)}
-                placeholder="如：强调某个数据、加入个人故事、针对某个热点事件..."
+                placeholder={t.additionalPlaceholder}
                 rows={3}
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors resize-none"
               />
@@ -196,17 +200,18 @@ function CreatePageInner() {
               disabled={loading || !title.trim()}
               className="w-full bg-white text-black py-3.5 rounded-xl font-semibold text-sm hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {loading ? "AI 正在创作中..." : "生成内容 →"}
+              {loading ? t.generatingContent : t.generateBtn}
             </button>
 
             {limitReached && (
               <div className="border border-yellow-500/20 bg-yellow-500/5 rounded-xl p-4 space-y-2 text-center">
-                <p className="text-sm text-yellow-400/80">今日免费次数已用完（3次/天）</p>
+                <p className="text-sm text-yellow-400/80">{t.limitReachedTitle}</p>
+                <p className="text-xs text-white/30">{t.limitReachedDesc}</p>
                 <Link
                   href="/pricing"
                   className="inline-block text-xs bg-white text-black px-5 py-2 rounded-full font-semibold hover:bg-white/90 transition-colors"
                 >
-                  升级 Pro，无限生成 →
+                  {t.upgradeNow}
                 </Link>
               </div>
             )}
@@ -215,14 +220,14 @@ function CreatePageInner() {
           {/* Right: Output */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white/60">生成结果</h2>
+              <h2 className="text-sm font-semibold text-white/60">{t.generatedResult}</h2>
               {generatedContent && (
                 <div className="flex gap-2">
                   <button
                     onClick={copyContent}
                     className="px-3 py-1.5 border border-white/10 rounded-lg text-xs text-white/40 hover:border-white/30 hover:text-white/70 transition-colors"
                   >
-                    {copySuccess ? "已复制 ✓" : "复制"}
+                    {copySuccess ? `${t.copied} ✓` : t.copy}
                   </button>
                   <button
                     onClick={saveContent}
@@ -233,7 +238,7 @@ function CreatePageInner() {
                         : "bg-white text-black hover:bg-white/90"
                     }`}
                   >
-                    {saved ? "已保存 ✓" : saving ? "保存中..." : "保存到内容库"}
+                    {saved ? `${t.saved} ✓` : saving ? t.saving : t.saveToLibraryBtn}
                   </button>
                 </div>
               )}
@@ -243,19 +248,17 @@ function CreatePageInner() {
               {loading ? (
                 <div className="flex flex-col items-center justify-center h-full gap-4 py-20">
                   <div className="w-5 h-5 border border-white/20 border-t-white rounded-full animate-spin" />
-                  <p className="text-xs text-white/30">
-                    AI 正在按照你的风格创作 {contentType === "script" ? "口播逐字稿" : "图文内容"}...
-                  </p>
+                  <p className="text-xs text-white/30">{t.generatingContent}</p>
                 </div>
               ) : generatedContent ? (
                 <div className="space-y-2">
                   <div className="flex gap-2 text-xs text-white/20 mb-4">
                     <span className="px-2 py-0.5 bg-white/5 rounded">{platform}</span>
                     <span className="px-2 py-0.5 bg-white/5 rounded">
-                      {contentType === "graphic" ? "图文" : "口播稿"}
+                      {contentType === "graphic" ? t.graphic : t.script}
                     </span>
                     <span className="px-2 py-0.5 bg-white/5 rounded">
-                      {generatedContent.replace(/\s/g, "").length} 字
+                      {generatedContent.replace(/\s/g, "").length} {t.wordCount}
                     </span>
                   </div>
                   <pre className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap font-sans">
@@ -265,9 +268,7 @@ function CreatePageInner() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-full py-20 gap-3 text-center">
                   <span className="text-4xl text-white/10">◈</span>
-                  <p className="text-xs text-white/20">
-                    填写左侧信息，点击生成内容
-                  </p>
+                  <p className="text-xs text-white/20">{t.generateBtn}</p>
                 </div>
               )}
             </div>

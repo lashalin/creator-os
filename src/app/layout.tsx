@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 
 export const metadata: Metadata = {
-  title: "CreatorOS — 从选题到内容，一站搞定",
-  description: "专为个人创作者打造的智能内容生产系统",
+  title: "CreatorOS — From topic to content, all in one place",
+  description: "The intelligent content production system for individual creators",
 };
 
 export default function RootLayout({
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="zh">
       <body className="antialiased">
-        {children}
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
       </body>
     </html>
   );

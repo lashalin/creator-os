@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { exportToWord, exportToPDF } from "@/lib/export";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ContentItem {
   id: string;
@@ -14,16 +15,21 @@ interface ContentItem {
   createdAt: string;
 }
 
-const PLATFORM_FILTERS = ["全部", "小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
+const PLATFORM_FILTERS_ZH = ["全部", "小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
+const PLATFORM_FILTERS_EN = ["All", "小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
 
 export default function LibraryPage() {
+  const { t, locale } = useLanguage();
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"all" | "graphic" | "script">("all");
-  const [platformFilter, setPlatformFilter] = useState("全部");
+  const [platformFilter, setPlatformFilter] = useState("all");
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [exporting, setExporting] = useState<"word" | "pdf" | null>(null);
+
+  const PLATFORM_FILTERS = locale === "zh" ? PLATFORM_FILTERS_ZH : PLATFORM_FILTERS_EN;
+  const ALL_VALUE = locale === "zh" ? "全部" : "All";
 
   useEffect(() => {
     fetch("/api/content")
@@ -40,7 +46,7 @@ export default function LibraryPage() {
       tab === "all" ||
       (tab === "graphic" && item.contentType === "graphic") ||
       (tab === "script" && item.contentType === "script");
-    const platformMatch = platformFilter === "全部" || item.platform === platformFilter;
+    const platformMatch = platformFilter === "all" || item.platform === platformFilter;
     return typeMatch && platformMatch;
   });
 
@@ -56,7 +62,7 @@ export default function LibraryPage() {
       await exportToWord(item.title, item.content, item.platform, item.contentType);
     } catch (e) {
       console.error(e);
-      alert("导出失败，请重试");
+      alert(t.error);
     } finally {
       setExporting(null);
     }
@@ -68,7 +74,7 @@ export default function LibraryPage() {
       exportToPDF(item.title, item.content, item.platform, item.contentType);
     } catch (e) {
       console.error(e);
-      alert("导出失败，请重试");
+      alert(t.error);
     } finally {
       setExporting(null);
     }
@@ -79,17 +85,23 @@ export default function LibraryPage() {
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
   };
 
+  const TABS = [
+    { value: "all", label: locale === "zh" ? "全部" : "All" },
+    { value: "graphic", label: t.graphic },
+    { value: "script", label: locale === "zh" ? "口播稿" : "Scripts" },
+  ];
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
       <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5">
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="text-xs text-white/30 hover:text-white/60 transition-colors">
-            ← 主页
+            ← {t.dashboardTitle}
           </Link>
-          <span className="text-sm font-semibold">内容库</span>
+          <span className="text-sm font-semibold">{t.libraryTitle}</span>
         </div>
         <Link href="/create" className="text-xs bg-white text-black px-4 py-1.5 rounded-full font-medium hover:bg-white/90 transition-colors">
-          + 生成内容
+          + {t.contentFactory}
         </Link>
       </nav>
 
@@ -98,19 +110,15 @@ export default function LibraryPage() {
         <div className="w-96 border-r border-white/5 flex flex-col">
           {/* Tabs */}
           <div className="flex gap-1 p-3 border-b border-white/5">
-            {[
-              { value: "all", label: "全部" },
-              { value: "graphic", label: "图文" },
-              { value: "script", label: "口播稿" },
-            ].map((t) => (
+            {TABS.map((tb) => (
               <button
-                key={t.value}
-                onClick={() => setTab(t.value as "all" | "graphic" | "script")}
+                key={tb.value}
+                onClick={() => setTab(tb.value as "all" | "graphic" | "script")}
                 className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  tab === t.value ? "bg-white/10 text-white" : "text-white/30 hover:text-white/60"
+                  tab === tb.value ? "bg-white/10 text-white" : "text-white/30 hover:text-white/60"
                 }`}
               >
-                {t.label}
+                {tb.label}
               </button>
             ))}
           </div>
@@ -118,19 +126,22 @@ export default function LibraryPage() {
           {/* Platform Filter */}
           <div className="px-3 py-2 border-b border-white/5">
             <div className="flex gap-1 flex-wrap">
-              {PLATFORM_FILTERS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPlatformFilter(p)}
-                  className={`px-2.5 py-1 rounded-full text-xs transition-all ${
-                    platformFilter === p
-                      ? "bg-white/10 text-white"
-                      : "text-white/30 hover:text-white/50"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
+              {PLATFORM_FILTERS.map((p, i) => {
+                const filterVal = i === 0 ? "all" : p;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPlatformFilter(filterVal)}
+                    className={`px-2.5 py-1 rounded-full text-xs transition-all ${
+                      platformFilter === filterVal
+                        ? "bg-white/10 text-white"
+                        : "text-white/30 hover:text-white/50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -144,14 +155,11 @@ export default function LibraryPage() {
               <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-6">
                 <span className="text-3xl text-white/10">◉</span>
                 <p className="text-xs text-white/30">
-                  {items.length === 0 ? "内容库还是空的，去内容工厂创建第一篇吧" : "没有符合筛选条件的内容"}
+                  {items.length === 0 ? t.emptyLibrary : (locale === "zh" ? "没有符合筛选条件的内容" : "No content matches the filters")}
                 </p>
                 {items.length === 0 && (
-                  <Link
-                    href="/create"
-                    className="text-xs text-white/50 hover:text-white transition-colors"
-                  >
-                    去生成 →
+                  <Link href="/create" className="text-xs text-white/50 hover:text-white transition-colors">
+                    {t.goCreate}
                   </Link>
                 )}
               </div>
@@ -172,10 +180,10 @@ export default function LibraryPage() {
                           <span className="text-xs text-white/30">{item.platform}</span>
                           <span className="text-xs text-white/20">·</span>
                           <span className="text-xs text-white/30">
-                            {item.contentType === "graphic" ? "图文" : "口播稿"}
+                            {item.contentType === "graphic" ? t.graphic : t.script}
                           </span>
                           <span className="text-xs text-white/20">·</span>
-                          <span className="text-xs text-white/20">{item.wordCount || 0}字</span>
+                          <span className="text-xs text-white/20">{item.wordCount || 0}{t.wordCount}</span>
                         </div>
                       </div>
                       <span className="text-xs text-white/20 shrink-0 mt-0.5">
@@ -189,7 +197,7 @@ export default function LibraryPage() {
           </div>
 
           <div className="px-4 py-3 border-t border-white/5">
-            <p className="text-xs text-white/20">{filtered.length} 篇内容</p>
+            <p className="text-xs text-white/20">{filtered.length} {locale === "zh" ? "篇内容" : "items"}</p>
           </div>
         </div>
 
@@ -202,8 +210,8 @@ export default function LibraryPage() {
                   <h2 className="text-sm font-semibold">{selectedItem.title}</h2>
                   <div className="flex gap-3 text-xs text-white/30">
                     <span>{selectedItem.platform}</span>
-                    <span>{selectedItem.contentType === "graphic" ? "图文" : "口播稿"}</span>
-                    <span>{selectedItem.wordCount || 0} 字</span>
+                    <span>{selectedItem.contentType === "graphic" ? t.graphic : t.script}</span>
+                    <span>{selectedItem.wordCount || 0} {t.wordCount}</span>
                     <span>{formatDate(selectedItem.createdAt)}</span>
                   </div>
                 </div>
@@ -212,27 +220,27 @@ export default function LibraryPage() {
                     onClick={() => copyContent(selectedItem.content)}
                     className="px-3 py-2 border border-white/10 rounded-lg text-xs text-white/50 hover:border-white/30 hover:text-white/80 transition-colors"
                   >
-                    {copySuccess ? "已复制 ✓" : "复制"}
+                    {copySuccess ? `${t.copied} ✓` : t.copy}
                   </button>
                   <button
                     onClick={() => handleExportWord(selectedItem)}
                     disabled={exporting === "word"}
                     className="px-3 py-2 border border-white/10 rounded-lg text-xs text-white/50 hover:border-white/30 hover:text-white/80 transition-colors disabled:opacity-40"
                   >
-                    {exporting === "word" ? "导出中..." : "Word"}
+                    {exporting === "word" ? t.exporting : t.exportWord}
                   </button>
                   <button
                     onClick={() => handleExportPDF(selectedItem)}
                     disabled={exporting === "pdf"}
                     className="px-3 py-2 border border-white/10 rounded-lg text-xs text-white/50 hover:border-white/30 hover:text-white/80 transition-colors disabled:opacity-40"
                   >
-                    {exporting === "pdf" ? "导出中..." : "PDF"}
+                    {exporting === "pdf" ? t.exporting : t.exportPDF}
                   </button>
                   <Link
                     href={`/create?title=${encodeURIComponent(selectedItem.title)}`}
                     className="px-3 py-2 bg-white/10 rounded-lg text-xs text-white/70 hover:bg-white/15 transition-colors"
                   >
-                    重新生成
+                    {locale === "zh" ? "重新生成" : "Regenerate"}
                   </Link>
                 </div>
               </div>
@@ -245,7 +253,7 @@ export default function LibraryPage() {
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
               <span className="text-5xl text-white/5">◉</span>
-              <p className="text-sm text-white/20">从左侧选择一篇内容查看</p>
+              <p className="text-sm text-white/20">{locale === "zh" ? "从左侧选择一篇内容查看" : "Select an item from the left to view"}</p>
             </div>
           )}
         </div>
