@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
 只输出 JSON 数组，不要有其他文字。`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const text = result.response.text();
 
