@@ -54,9 +54,9 @@ export const creatorProfiles = pgTable("creator_profiles", {
   targetAudience: text("target_audience"),
   avoidContent: text("avoid_content"),
   referenceCreators: text("reference_creators"),
-  expressionStyle: text("expression_style"),
+  expressionStyle: jsonb("expression_style").$type<string[]>().default([]),
   platforms: jsonb("platforms").$type<string[]>().default([]),
-  goals: text("goals"),
+  goals: jsonb("goals").$type<string[]>().default([]),
   pastContent: jsonb("past_content").$type<{ text: string; isViral: boolean; label: string }[]>().default([]),
   dna: jsonb("dna").$type<{
     tags: string[];

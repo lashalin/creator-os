@@ -5,6 +5,12 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+function toStr(val: unknown): string {
+  if (!val) return "未填写";
+  if (Array.isArray(val)) return val.join("、");
+  return String(val);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -21,14 +27,14 @@ export async function POST(req: NextRequest) {
 请根据以下信息，生成一份结构化的创作者 DNA：
 
 **创作者信息：**
-- 背景/自我介绍：${background || "未填写"}
-- 主要创作主题：${Array.isArray(topics) ? topics.join("、") : topics || "未填写"}
-- 不想创作的内容：${avoidContent || "未填写"}
-- 表达风格：${expressionStyle || "未填写"}
-- 目标受众：${targetAudience || "未填写"}
-- 参考的创作者：${referenceCreators || "未填写"}
-- 主要平台：${Array.isArray(platforms) ? platforms.join("、") : platforms || "未填写"}
-- 创作目标：${goals || "未填写"}
+- 背景/自我介绍：${toStr(background)}
+- 主要创作主题：${toStr(topics)}
+- 不想创作的内容：${toStr(avoidContent)}
+- 表达风格：${toStr(expressionStyle)}
+- 目标受众：${toStr(targetAudience)}
+- 参考的创作者：${toStr(referenceCreators)}
+- 主要平台：${toStr(platforms)}
+- 创作目标：${toStr(goals)}
 
 **历史内容样本：**
 ${pastContentSummary}
@@ -46,7 +52,7 @@ ${pastContentSummary}
 只输出 JSON，不要有其他文字。`;
 
     const message = await client.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });
@@ -67,6 +73,14 @@ ${pastContentSummary}
     return NextResponse.json({ dna });
   } catch (error) {
     console.error("Generate DNA error:", error);
+    // 余额不足时给出明确提示
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes("credit balance") || errMsg.includes("insufficient")) {
+      return NextResponse.json(
+        { error: "AI 服务余额不足，请联系管理员充值后重试" },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { error: "生成失败，请重试" },
       { status: 500 }

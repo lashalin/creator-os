@@ -81,7 +81,7 @@ ${typeInstruction}
 直接输出内容，不需要任何解释或前言。`;
 
     const message = await client.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
@@ -92,6 +92,10 @@ ${typeInstruction}
     return NextResponse.json({ content: textContent.text });
   } catch (error) {
     console.error("Generate content error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes("credit balance") || errMsg.includes("insufficient")) {
+      return NextResponse.json({ error: "AI 服务余额不足，请联系管理员充值后重试" }, { status: 503 });
+    }
     return NextResponse.json({ error: "生成失败，请重试" }, { status: 500 });
   }
 }

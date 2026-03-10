@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 只输出 JSON 数组，不要有其他文字。`;
 
     const message = await client.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
     });
@@ -86,6 +86,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ topics });
   } catch (error) {
     console.error("Suggest topics error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (errMsg.includes("credit balance") || errMsg.includes("insufficient")) {
+      return NextResponse.json({ error: "AI 服务余额不足，请联系管理员充值后重试" }, { status: 503 });
+    }
     return NextResponse.json({ error: "生成失败，请重试" }, { status: 500 });
   }
 }
