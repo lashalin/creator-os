@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 function toStr(val: unknown): string {
   if (!val) return "未填写";
@@ -51,39 +49,17 @@ ${pastContentSummary}
 
 只输出 JSON，不要有其他文字。`;
 
-    const message = await client.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
 
-    const textContent = message.content.find((c) => c.type === "text");
-    if (!textContent || textContent.type !== "text") {
-      throw new Error("No text response from Claude");
-    }
-
-    // Extract JSON from response
-    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Could not parse JSON from response");
-    }
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Could not parse JSON from response");
 
     const dna = JSON.parse(jsonMatch[0]);
-
     return NextResponse.json({ dna });
   } catch (error) {
     console.error("Generate DNA error:", error);
-    // 余额不足时给出明确提示
-    const errMsg = error instanceof Error ? error.message : String(error);
-    if (errMsg.includes("credit balance") || errMsg.includes("insufficient")) {
-      return NextResponse.json(
-        { error: "AI 服务余额不足，请联系管理员充值后重试" },
-        { status: 503 }
-      );
-    }
-    return NextResponse.json(
-      { error: "生成失败，请重试" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "生成失败，请重试" }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { creatorProfiles } from "@/db/schema";
@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { checkAndIncrementUsage } from "@/lib/subscription";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 const PLATFORM_INSTRUCTIONS: Record<string, string> = {
   小红书: "小红书风格：标题带emoji，正文分段清晰，多用「|」「✨」「💡」等符号，结尾加话题标签 #xxx，语气亲切活泼，适合图文笔记",
@@ -80,22 +80,13 @@ ${typeInstruction}
 
 直接输出内容，不需要任何解释或前言。`;
 
-    const message = await client.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
 
-    const textContent = message.content.find((c) => c.type === "text");
-    if (!textContent || textContent.type !== "text") throw new Error("No text");
-
-    return NextResponse.json({ content: textContent.text });
+    return NextResponse.json({ content: text });
   } catch (error) {
     console.error("Generate content error:", error);
-    const errMsg = error instanceof Error ? error.message : String(error);
-    if (errMsg.includes("credit balance") || errMsg.includes("insufficient")) {
-      return NextResponse.json({ error: "AI 服务余额不足，请联系管理员充值后重试" }, { status: 503 });
-    }
     return NextResponse.json({ error: "生成失败，请重试" }, { status: 500 });
   }
 }

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,16 +41,11 @@ export async function POST(req: NextRequest) {
 
 只输出 JSON 数组，不要有其他文字。`;
 
-    const message = await client.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
 
-    const textContent = message.content.find((c) => c.type === "text");
-    if (!textContent || textContent.type !== "text") throw new Error("No text");
-
-    const jsonMatch = textContent.text.match(/\[[\s\S]*\]/);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("No JSON");
 
     const topics = JSON.parse(jsonMatch[0]);
