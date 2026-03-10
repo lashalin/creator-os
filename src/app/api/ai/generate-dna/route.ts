@@ -46,7 +46,7 @@ ${pastContentSummary}
 只输出 JSON，不要有其他文字。`;
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });

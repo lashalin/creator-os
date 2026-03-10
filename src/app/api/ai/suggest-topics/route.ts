@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 只输出 JSON 数组，不要有其他文字。`;
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
     });
