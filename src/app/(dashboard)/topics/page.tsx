@@ -21,7 +21,7 @@ interface TrendItem {
   tag?: string;
 }
 
-type TrendSource = "google" | "douyin" | "youtube";
+type TrendSource = "google" | "douyin" | "youtube" | "x";
 
 const COMPETITION_COLORS: Record<string, string> = {
   低: "text-green-400",
@@ -32,10 +32,11 @@ const COMPETITION_COLORS: Record<string, string> = {
   High: "text-red-400",
 };
 
-const TREND_SOURCES: { key: TrendSource; label: string; icon: string; geo?: string }[] = [
+const TREND_SOURCES: { key: TrendSource; label: string; icon: string }[] = [
   { key: "google", label: "Google 趋势", icon: "🔍" },
   { key: "douyin", label: "抖音热搜", icon: "🎵" },
-  { key: "youtube", label: "YouTube 热门", icon: "📺" },
+  { key: "youtube", label: "YouTube", icon: "📺" },
+  { key: "x", label: "X 热点", icon: "𝕏" },
 ];
 
 export default function TopicsPage() {
@@ -246,15 +247,6 @@ export default function TopicsPage() {
                         <span className="hidden sm:inline">{s.label}</span>
                       </button>
                     ))}
-                    {/* X placeholder */}
-                    <button
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/15 cursor-not-allowed"
-                      title="X/Twitter 需要付费 API（$100/月），暂未开放"
-                    >
-                      <span>𝕏</span>
-                      <span className="hidden sm:inline">X 热点</span>
-                      <span className="hidden sm:inline text-[10px] text-white/20">付费</span>
-                    </button>
                   </div>
                   <button
                     onClick={() => fetchTrends(trendSource)}
@@ -279,9 +271,15 @@ export default function TopicsPage() {
                 {trendsWarning && !trendsLoading && (
                   <div className="flex flex-col gap-2 py-4 px-4 bg-yellow-500/5 border border-yellow-500/15 rounded-xl text-sm text-yellow-400/80">
                     <p>⚠️ {trendsWarning}</p>
-                    <p className="text-xs text-white/30">
-                      去 Google Cloud Console → 启用 "YouTube Data API v3" → 创建 API key → 在 Vercel 环境变量添加 <code className="bg-white/5 px-1 rounded">YOUTUBE_API_KEY</code>
-                    </p>
+                    {trendSource === "x" && (
+                      <div className="text-xs text-white/30 space-y-1">
+                        <p>配置步骤：在 Vercel 环境变量中添加：</p>
+                        <p><code className="bg-white/5 px-1 rounded">TWITTER_USERNAME</code> = 你的X用户名</p>
+                        <p><code className="bg-white/5 px-1 rounded">TWITTER_PASSWORD</code> = 你的X密码</p>
+                        <p><code className="bg-white/5 px-1 rounded">TWITTER_EMAIL</code> = 你的X邮箱（可选）</p>
+                        <p className="text-yellow-400/50">⚠️ 建议使用专用小号，不要用主账号</p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -350,9 +348,10 @@ export default function TopicsPage() {
               {/* Footer note */}
               <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between">
                 <p className="text-xs text-white/20">
-                  {trendSource === "google" && "数据来源：Google Trends，约1小时更新一次"}
-                  {trendSource === "douyin" && "数据来源：抖音热搜榜，约15分钟更新一次"}
-                  {trendSource === "youtube" && "数据来源：YouTube 热门视频榜，约30分钟更新一次"}
+                  {trendSource === "google" && "数据来源：Google Trends 官方接口，约1小时更新"}
+                  {trendSource === "douyin" && "数据来源：抖音热搜榜官方接口，约15分钟更新"}
+                  {trendSource === "youtube" && "数据来源：YouTube InnerTube 私有接口，无需 API key，约30分钟更新"}
+                  {trendSource === "x" && "数据来源：X/Twitter（需配置账号，建议用小号）"}
                 </p>
                 <p className="text-xs text-white/20">点击任意词 → AI 生成选题建议</p>
               </div>
