@@ -21,7 +21,7 @@ interface TrendItem {
   tag?: string;
 }
 
-type TrendSource = "google" | "douyin" | "youtube" | "x";
+type TrendSource = "google" | "douyin" | "xiaohongshu" | "x";
 
 const COMPETITION_COLORS: Record<string, string> = {
   低: "text-green-400",
@@ -35,7 +35,7 @@ const COMPETITION_COLORS: Record<string, string> = {
 const TREND_SOURCES: { key: TrendSource; label: string; icon: string }[] = [
   { key: "google", label: "Google 趋势", icon: "🔍" },
   { key: "douyin", label: "抖音热搜", icon: "🎵" },
-  { key: "youtube", label: "YouTube", icon: "📺" },
+  { key: "xiaohongshu", label: "小红书", icon: "📕" },
   { key: "x", label: "X 热点", icon: "𝕏" },
 ];
 
@@ -56,6 +56,12 @@ export default function TopicsPage() {
   const [trendsError, setTrendsError] = useState<string | null>(null);
   const [trendsWarning, setTrendsWarning] = useState<string | null>(null);
   const [trendsFetchedAt, setTrendsFetchedAt] = useState<string | null>(null);
+
+  // Keyword trend search state
+  const [kwSearchInput, setKwSearchInput] = useState("");
+  const [kwSearchResults, setKwSearchResults] = useState<Array<{ keyword: string; source: string }>>([]);
+  const [kwSearchLoading, setKwSearchLoading] = useState(false);
+  const [kwSearchError, setKwSearchError] = useState<string | null>(null);
 
   const fetchTrends = useCallback(async (source: TrendSource) => {
     setTrendsLoading(true);
@@ -85,6 +91,28 @@ export default function TopicsPage() {
       fetchTrends(trendSource);
     }
   }, [mode, trendSource, fetchTrends]);
+
+  const searchKeywordTrend = async (kw?: string) => {
+    const q = (kw ?? kwSearchInput).trim();
+    if (!q) return;
+    if (kw) setKwSearchInput(kw);
+    setKwSearchLoading(true);
+    setKwSearchError(null);
+    setKwSearchResults([]);
+    try {
+      const res = await fetch(`/api/trends/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setKwSearchError(data.error || "搜索失败");
+      } else {
+        setKwSearchResults(data.results ?? []);
+      }
+    } catch {
+      setKwSearchError("网络错误，请重试");
+    } finally {
+      setKwSearchLoading(false);
+    }
+  };
 
   const generateAITopics = async () => {
     setLoading(true);
@@ -292,12 +320,7 @@ export default function TopicsPage() {
                       <button
                         key={idx}
                         onClick={() => {
-                          // For YouTube: use first few words as keyword
-                          const kw =
-                            trendSource === "youtube"
-                              ? trend.keyword.split(/[\s—\-|·]/)[0].slice(0, 20)
-                              : trend.keyword;
-                          searchHotTopics(kw);
+                          searchHotTopics(trend.keyword);
                         }}
                         className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
                       >
@@ -341,16 +364,99 @@ export default function TopicsPage() {
                 <p className="text-xs text-white/20">
                   {trendSource === "google" && "数据来源：Google Trends 官方接口，约1小时更新"}
                   {trendSource === "douyin" && "数据来源：抖音热搜榜官方接口，约15分钟更新"}
-                  {trendSource === "youtube" && "数据来源：YouTube InnerTube 私有接口，无需 API key，约30分钟更新"}
-                  {trendSource === "x" && "数据来源：X/Twitter（需配置账号，建议用小号）"}
+                  {trendSource === "xiaohongshu" && "数据来源：小红书热搜榜，约15分钟更新"}
+                  {trendSource === "x" && "数据来源：trends24.in 聚合 X/Twitter 实时热榜，约15分钟更新"}
                 </p>
                 <p className="text-xs text-white/20">点击任意词 → AI 生成选题建议</p>
               </div>
             </div>
 
-            {/* Keyword Search */}
+            {/* ── Keyword Trend Search ── */}
+            <div className="border border-white/8 rounded-2xl overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-white/5">
+                <span className="text-sm font-semibold">🔎 关键词热搜</span>
+                <span className="text-xs text-white/30">输入关键词，查看各平台相关热搜</span>
+              </div>
+              <div className="px-5 py-4 space-y-4">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={kwSearchInput}
+                    onChange={(e) => setKwSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && searchKeywordTrend()}
+                    placeholder="输入关键词，如：副业、AI、减脂..."
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors"
+                  />
+                  <button
+                    onClick={() => searchKeywordTrend()}
+                    disabled={kwSearchLoading || !kwSearchInput.trim()}
+                    className="px-5 py-2.5 rounded-xl text-sm font-medium border border-white/15 text-white/60 hover:border-white/30 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {kwSearchLoading ? "搜索中..." : "查热搜"}
+                  </button>
+                </div>
+
+                {kwSearchLoading && (
+                  <div className="flex items-center gap-3 py-4">
+                    <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
+                    <span className="text-sm text-white/30">正在搜索各平台热搜...</span>
+                  </div>
+                )}
+
+                {kwSearchError && !kwSearchLoading && (
+                  <div className="flex items-center justify-between py-3 px-4 bg-red-500/5 border border-red-500/15 rounded-xl">
+                    <span className="text-sm text-red-400/80">{kwSearchError}</span>
+                    <button
+                      onClick={() => searchKeywordTrend()}
+                      className="text-xs text-white/40 hover:text-white/70 transition-colors"
+                    >
+                      重试
+                    </button>
+                  </div>
+                )}
+
+                {!kwSearchLoading && !kwSearchError && kwSearchResults.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-white/30">
+                      找到 <span className="text-white/50">{kwSearchResults.length}</span> 条相关热搜 · 点击词条用 AI 生成选题
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {kwSearchResults.map((item, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => searchHotTopics(item.keyword)}
+                          className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
+                        >
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ${
+                              item.source === "抖音"
+                                ? "bg-pink-500/20 text-pink-400"
+                                : item.source === "X"
+                                ? "bg-blue-500/20 text-blue-400"
+                                : "bg-white/10 text-white/40"
+                            }`}
+                          >
+                            {item.source}
+                          </span>
+                          <span className="text-sm text-white/70 group-hover:text-white transition-colors flex-1 truncate">
+                            {item.keyword}
+                          </span>
+                          <span className="text-white/20 group-hover:text-white/50 transition-colors text-xs flex-shrink-0">→</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!kwSearchLoading && !kwSearchError && kwSearchResults.length === 0 && kwSearchInput && (
+                  <p className="text-xs text-white/25 text-center py-3">暂无相关热搜，请换个关键词试试</p>
+                )}
+              </div>
+            </div>
+
+            {/* AI Topic Generation from keyword */}
             <div className="space-y-2">
-              <p className="text-xs text-white/30">或手动输入关键词</p>
+              <p className="text-xs text-white/30">或直接输入关键词，让 AI 生成选题</p>
               <div className="flex gap-3">
                 <input
                   type="text"

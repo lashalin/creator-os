@@ -93,71 +93,47 @@ async function fetchDouyinTrends(): Promise<TrendItem[]> {
   }));
 }
 
-// ── YouTube Trending ──────────────────────────────────────
-// Uses youtubei.js which wraps YouTube's private InnerTube API.
-// NO API KEY NEEDED. Completely free. Timeout: 8s for Vercel serverless.
-async function fetchYoutubeTrends(location = "US"): Promise<TrendItem[]> {
-  const { Innertube } = await import("youtubei.js");
-
-  // Wrap with 8s timeout (Vercel Hobby limit = 10s)
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("YouTube timeout")), 8000)
-  );
-
-  const fetchPromise = (async () => {
-    const yt = await Innertube.create({
-      location: location === "CN" ? "US" : location,
-      lang: "en",
-      generate_session_locally: true,
+// ── 小红书热搜 ─────────────────────────────────────────────
+// Uses vvhan free API (no auth needed). Cached 15 min.
+async function fetchXiaohongshuTrends(): Promise<TrendItem[]> {
+  // Primary: vvhan free API
+  try {
+    const res = await fetch("https://api.vvhan.com/api/hotlist/xhsHot", {
+      next: { revalidate: 900 },
     });
-
-    const trending = await yt.getTrending();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const feed = trending as any;
-    const results: TrendItem[] = [];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const extract = (items: unknown[]) => {
-      for (const item of items) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const v = item as any;
-        const title =
-          v?.title?.text ??
-          v?.title?.toString?.() ??
-          v?.video_title?.text ??
-          (typeof v?.title === "string" ? v.title : null);
-        if (title && typeof title === "string" && title.length > 0) {
-          results.push({
-            keyword: title.trim(),
-            heat: v?.short_view_count?.text ?? v?.view_count?.text ?? v?.author?.name ?? "",
-          });
-        }
-      }
-    };
-
-    if (Array.isArray(feed.videos) && feed.videos.length > 0) {
-      extract(feed.videos);
-    }
-    if (results.length === 0 && Array.isArray(feed.tabs)) {
-      for (const tab of feed.tabs.slice(0, 1)) {
-        const content = tab?.content ?? tab?.selected_tab?.content;
-        if (!content) continue;
-        const items = content.videos ?? content.results ?? content.items ?? content.contents;
-        if (Array.isArray(items)) extract(items);
-        if (results.length === 0 && Array.isArray(content.contents)) {
-          for (const section of content.contents) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const si = (section as any)?.contents ?? (section as any)?.items;
-            if (Array.isArray(si)) extract(si);
-          }
-        }
-        if (results.length > 0) break;
+    if (res.ok) {
+      const data = await res.json();
+      const list: Array<{ title: string; desc?: string; hot?: string }> = data?.data ?? [];
+      if (list.length > 0) {
+        return list.slice(0, 20).map((item) => ({
+          keyword: item.title,
+          heat: item.hot ?? item.desc,
+        }));
       }
     }
-    return results.slice(0, 20);
-  })();
+  } catch {
+    // fall through
+  }
 
-  return Promise.race([fetchPromise, timeoutPromise]);
+  // Fallback: Bilibili trending (similar short-video audience)
+  const res = await fetch(
+    "https://api.bilibili.com/x/web-interface/ranking/v2?rid=0&type=all",
+    {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        Referer: "https://www.bilibili.com",
+      },
+      next: { revalidate: 1800 },
+    }
+  );
+  if (!res.ok) throw new Error(`Xiaohongshu / Bilibili fallback HTTP ${res.status}`);
+  const d = await res.json();
+  const list: Array<{ title: string; stat?: { view?: number } }> = d?.data?.list ?? [];
+  return list.slice(0, 20).map((v) => ({
+    keyword: v.title,
+    heat: v.stat?.view ? `${(v.stat.view / 10000).toFixed(1)}万播放` : undefined,
+  }));
 }
 
 // ── X / Twitter Trending ─────────────────────────────────
@@ -268,8 +244,8 @@ export async function GET(req: NextRequest) {
         trends = await fetchDouyinTrends();
         break;
 
-      case "youtube":
-        trends = await fetchYoutubeTrends(geo);
+      case "xiaohongshu":
+        trends = await fetchXiaohongshuTrends();
         break;
 
       case "x":
