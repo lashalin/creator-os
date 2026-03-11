@@ -9,9 +9,11 @@ export interface TrendItem {
 }
 
 // ── Google Trends ────────────────────────────────────────
-// Official daily trends JSON API. No key, updates daily, cached 1h.
-async function fetchGoogleTrends(geo = "CN"): Promise<TrendItem[]> {
-  const url = `https://trends.google.com/trends/api/dailytrends?hl=zh-CN&geo=${geo}&ns=15`;
+// Uses the public RSS feed (no API key needed, updated hourly).
+// Falls back to US if the requested geo returns no data.
+async function fetchGoogleTrends(geo = "US"): Promise<TrendItem[]> {
+  const geoCode = geo === "CN" ? "US" : geo; // CN blocked outside China, use US as proxy
+  const url = `https://trends.google.com/trending/rss?geo=${geoCode}`;
   const res = await fetch(url, {
     headers: {
       "User-Agent":
@@ -19,23 +21,29 @@ async function fetchGoogleTrends(geo = "CN"): Promise<TrendItem[]> {
     },
     next: { revalidate: 3600 },
   });
-  if (!res.ok) throw new Error(`Google Trends HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Google Trends RSS HTTP ${res.status}`);
 
-  const text = await res.text();
-  const jsonStr = text.replace(/^\)\]\}',\n/, "");
-  const data = JSON.parse(jsonStr);
-  const days: Array<{
-    trendingSearches: Array<{
-      title: { query: string };
-      formattedTraffic?: string;
-    }>;
-  }> = data?.default?.trendingSearchesDays ?? [];
+  const xml = await res.text();
+  const trends: TrendItem[] = [];
 
-  if (!days.length) return [];
-  return days[0].trendingSearches.slice(0, 20).map((s) => ({
-    keyword: s.title.query,
-    heat: s.formattedTraffic ?? "",
-  }));
+  // Parse <item> blocks from RSS
+  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
+  let itemMatch: RegExpExecArray | null;
+  while ((itemMatch = itemRe.exec(xml)) !== null && trends.length < 20) {
+    const block = itemMatch[1];
+    // title can be plain or CDATA
+    const titleMatch =
+      block.match(/<title><!\[CDATA\[([^\]]+)\]\]><\/title>/) ||
+      block.match(/<title>([^<]+)<\/title>/);
+    const trafficMatch = block.match(/<ht:approx_traffic>([^<]+)<\/ht:approx_traffic>/);
+    if (titleMatch?.[1]) {
+      trends.push({
+        keyword: titleMatch[1].trim(),
+        heat: trafficMatch?.[1]?.trim() ?? "",
+      });
+    }
+  }
+  return trends;
 }
 
 // ── 抖音热搜 ──────────────────────────────────────────────
@@ -87,83 +95,69 @@ async function fetchDouyinTrends(): Promise<TrendItem[]> {
 
 // ── YouTube Trending ──────────────────────────────────────
 // Uses youtubei.js which wraps YouTube's private InnerTube API.
-// NO API KEY NEEDED. Completely free.
-async function fetchYoutubeTrends(location = "CN"): Promise<TrendItem[]> {
-  // Dynamic import to avoid bundling issues with ESM package
+// NO API KEY NEEDED. Completely free. Timeout: 8s for Vercel serverless.
+async function fetchYoutubeTrends(location = "US"): Promise<TrendItem[]> {
   const { Innertube } = await import("youtubei.js");
 
-  const yt = await Innertube.create({
-    location,
-    lang: location === "US" ? "en" : "zh-CN",
-    // No cache (filesystem not reliable in serverless)
-    generate_session_locally: true,
-  });
+  // Wrap with 8s timeout (Vercel Hobby limit = 10s)
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("YouTube timeout")), 8000)
+  );
 
-  const trending = await yt.getTrending();
+  const fetchPromise = (async () => {
+    const yt = await Innertube.create({
+      location: location === "CN" ? "US" : location,
+      lang: "en",
+      generate_session_locally: true,
+    });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const feed = trending as any;
-  const results: TrendItem[] = [];
+    const trending = await yt.getTrending();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const feed = trending as any;
+    const results: TrendItem[] = [];
 
-  // Try multiple possible structures from different versions of youtubei.js
-  const tryExtractFromItems = (items: unknown[]) => {
-    for (const item of items) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const v = item as any;
-      const title =
-        v?.title?.text ??
-        v?.title?.toString?.() ??
-        v?.video_title?.text ??
-        (typeof v?.title === "string" ? v.title : null);
-      if (title && typeof title === "string" && title.length > 0) {
-        const heat =
-          v?.short_view_count?.text ??
-          v?.view_count?.text ??
-          v?.author?.name ??
-          "";
-        results.push({ keyword: title.trim(), heat });
-      }
-    }
-  };
-
-  // Approach 1: trending.videos (some versions)
-  if (Array.isArray(feed.videos) && feed.videos.length > 0) {
-    tryExtractFromItems(feed.videos);
-  }
-
-  // Approach 2: trending.tabs[0].content.videos or .results
-  if (results.length === 0 && Array.isArray(feed.tabs)) {
-    for (const tab of feed.tabs.slice(0, 1)) {
-      const content = tab?.content ?? tab?.selected_tab?.content;
-      if (!content) continue;
-
-      const items =
-        content.videos ??
-        content.results ??
-        content.items ??
-        content.contents;
-      if (Array.isArray(items)) {
-        tryExtractFromItems(items);
-      }
-
-      // Drill into shelf renderers / sections
-      if (results.length === 0 && Array.isArray(content.contents)) {
-        for (const section of content.contents) {
-          const sectionItems =
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (section as any)?.contents ??
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (section as any)?.items;
-          if (Array.isArray(sectionItems)) {
-            tryExtractFromItems(sectionItems);
-          }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const extract = (items: unknown[]) => {
+      for (const item of items) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const v = item as any;
+        const title =
+          v?.title?.text ??
+          v?.title?.toString?.() ??
+          v?.video_title?.text ??
+          (typeof v?.title === "string" ? v.title : null);
+        if (title && typeof title === "string" && title.length > 0) {
+          results.push({
+            keyword: title.trim(),
+            heat: v?.short_view_count?.text ?? v?.view_count?.text ?? v?.author?.name ?? "",
+          });
         }
       }
-      if (results.length > 0) break;
-    }
-  }
+    };
 
-  return results.slice(0, 20);
+    if (Array.isArray(feed.videos) && feed.videos.length > 0) {
+      extract(feed.videos);
+    }
+    if (results.length === 0 && Array.isArray(feed.tabs)) {
+      for (const tab of feed.tabs.slice(0, 1)) {
+        const content = tab?.content ?? tab?.selected_tab?.content;
+        if (!content) continue;
+        const items = content.videos ?? content.results ?? content.items ?? content.contents;
+        if (Array.isArray(items)) extract(items);
+        if (results.length === 0 && Array.isArray(content.contents)) {
+          for (const section of content.contents) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const si = (section as any)?.contents ?? (section as any)?.items;
+            if (Array.isArray(si)) extract(si);
+          }
+        }
+        if (results.length > 0) break;
+      }
+    }
+    return results.slice(0, 20);
+  })();
+
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
 // ── X / Twitter Trending ─────────────────────────────────
@@ -171,13 +165,25 @@ async function fetchYoutubeTrends(location = "CN"): Promise<TrendItem[]> {
 // Completely FREE — no API key, no account, no credentials required.
 // Falls back to getdaytrends.com if trends24.in fails.
 
-async function fetchXTrends(geo = "worldwide"): Promise<TrendItem[]> {
+async function fetchXTrends(geo = "united-states"): Promise<TrendItem[]> {
   const UA =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
+  // Map generic geo codes to valid trends24.in country slugs
+  const slugMap: Record<string, string> = {
+    "worldwide": "united-states",
+    "US": "united-states",
+    "CN": "united-states", // China not on X, use global proxy
+    "GB": "united-kingdom",
+    "JP": "japan",
+    "KR": "south-korea",
+    "IN": "india",
+  };
+  const slug = slugMap[geo] ?? geo.toLowerCase().replace("_", "-");
+
   // ── Primary: trends24.in ────────────────────────────────
   try {
-    const res = await fetch(`https://trends24.in/${geo}/`, {
+    const res = await fetch(`https://trends24.in/${slug}/`, {
       headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
       next: { revalidate: 900 },
     });
@@ -216,7 +222,7 @@ async function fetchXTrends(geo = "worldwide"): Promise<TrendItem[]> {
   }
 
   // ── Fallback: getdaytrends.com ──────────────────────────
-  const res2 = await fetch(`https://getdaytrends.com/${geo}/`, {
+  const res2 = await fetch(`https://getdaytrends.com/`, {
     headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
     next: { revalidate: 900 },
   });
