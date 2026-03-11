@@ -79,6 +79,7 @@ export default function TopicsPage() {
   const [kwSearchLoading, setKwSearchLoading] = useState(false);
   const [kwSearchError, setKwSearchError] = useState<string | null>(null);
   const [kwLastQuery, setKwLastQuery] = useState<string | null>(null);
+  const [kwHasTavily, setKwHasTavily] = useState<boolean | null>(null);
 
   const fetchTrends = useCallback(async (source: TrendSource) => {
     setTrendsLoading(true);
@@ -128,6 +129,7 @@ export default function TopicsPage() {
       } else {
         const platforms: PlatformResult[] = data.platforms ?? [];
         setKwPlatforms(platforms);
+        setKwHasTavily(data.hasTavily ?? false);
         const firstWithData = platforms.find((p) => p.items.length > 0);
         if (firstWithData) setKwActiveTab(firstWithData.platform);
       }
@@ -496,35 +498,60 @@ export default function TopicsPage() {
                           <p className="text-xs text-yellow-400/60 pb-1">⚠ {p.error}</p>
                         )}
                         {p.items.length === 0 ? (
-                          <p className="text-sm text-white/25 text-center py-6">暂无数据</p>
+                          <p className="text-sm text-white/25 text-center py-6">
+                            {kwHasTavily === false
+                              ? "配置 TAVILY_API_KEY 可获得更多结果"
+                              : "暂无数据，请换个关键词或时间范围"}
+                          </p>
                         ) : (
                           p.items.map((item, idx) => (
-                            <button
+                            <div
                               key={idx}
-                              onClick={() => searchHotTopics(item.title)}
-                              className="group w-full flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
+                              className="group flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors"
                             >
                               <span className="text-xs text-white/20 font-mono w-5 flex-shrink-0 text-right mt-0.5">
                                 {idx + 1}
                               </span>
-                              <span className="text-sm text-white/70 group-hover:text-white transition-colors flex-1 leading-snug line-clamp-2">
+                              <span className="text-sm text-white/70 flex-1 leading-snug line-clamp-2">
                                 {item.title}
                               </span>
-                              <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                              <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
                                 {item.heat && (
                                   <span className="text-xs text-white/20 hidden sm:inline">{item.heat}</span>
                                 )}
-                                <span className="text-white/15 group-hover:text-white/50 text-xs">→</span>
+                                {item.url && (
+                                  <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="查看原文"
+                                    className="text-xs text-white/20 hover:text-white/60 transition-colors"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    ↗
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => searchHotTopics(item.title)}
+                                  title="AI 生成选题"
+                                  className="text-xs text-white/20 hover:text-white/70 transition-colors"
+                                >
+                                  ✦
+                                </button>
                               </div>
-                            </button>
+                            </div>
                           ))
                         )}
                       </div>
                     )
                   )}
 
-                  <div className="px-5 py-3 border-t border-white/5">
-                    <p className="text-xs text-white/20">点击任意内容 → AI 分析并生成选题建议</p>
+                  <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between">
+                    <p className="text-xs text-white/20">
+                      {kwHasTavily
+                        ? "✦ 点击生成选题  ↗ 查看原文"
+                        : "⚡ 配置 TAVILY_API_KEY 可获取更精准结果（免费）"}
+                    </p>
                   </div>
                 </div>
               )}
