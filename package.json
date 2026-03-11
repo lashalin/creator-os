@@ -13,7 +13,6 @@
     "@google/generative-ai": "^0.24.1",
     "@neondatabase/serverless": "^1.0.2",
     "@tavily/core": "^0.7.2",
-    "@treasure-dev/twitter-scraper": "^0.0.29",
     "@types/file-saver": "^2.0.7",
     "better-auth": "^1.5.4",
     "docx": "^9.6.0",

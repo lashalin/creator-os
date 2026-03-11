@@ -271,15 +271,6 @@ export default function TopicsPage() {
                 {trendsWarning && !trendsLoading && (
                   <div className="flex flex-col gap-2 py-4 px-4 bg-yellow-500/5 border border-yellow-500/15 rounded-xl text-sm text-yellow-400/80">
                     <p>⚠️ {trendsWarning}</p>
-                    {trendSource === "x" && (
-                      <div className="text-xs text-white/30 space-y-1">
-                        <p>配置步骤：在 Vercel 环境变量中添加：</p>
-                        <p><code className="bg-white/5 px-1 rounded">TWITTER_USERNAME</code> = 你的X用户名</p>
-                        <p><code className="bg-white/5 px-1 rounded">TWITTER_PASSWORD</code> = 你的X密码</p>
-                        <p><code className="bg-white/5 px-1 rounded">TWITTER_EMAIL</code> = 你的X邮箱（可选）</p>
-                        <p className="text-yellow-400/50">⚠️ 建议使用专用小号，不要用主账号</p>
-                      </div>
-                    )}
                   </div>
                 )}
 

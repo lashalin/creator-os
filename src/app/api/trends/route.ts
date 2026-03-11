@@ -167,69 +167,76 @@ async function fetchYoutubeTrends(location = "CN"): Promise<TrendItem[]> {
 }
 
 // ── X / Twitter Trending ─────────────────────────────────
-// Uses @treasure-dev/twitter-scraper (fork of the-convocation/twitter-scraper).
-// Requires TWITTER_USERNAME + TWITTER_PASSWORD env vars.
-// ⚠️ Use a dedicated account, NOT your main X account (low but non-zero ban risk).
-// Tip: set TWITTER_COOKIES (JSON array) to skip login on warm starts.
+// Scrapes trends24.in (aggregates real X/Twitter trending data).
+// Completely FREE — no API key, no account, no credentials required.
+// Falls back to getdaytrends.com if trends24.in fails.
 
-// Module-level scraper cache (persists across warm invocations)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _xScraper: any = null;
-let _xScraperTs = 0;
-const X_SESSION_TTL = 25 * 60 * 1000; // 25 min
+async function fetchXTrends(geo = "worldwide"): Promise<TrendItem[]> {
+  const UA =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-async function fetchXTrends(): Promise<TrendItem[]> {
-  const username = process.env.TWITTER_USERNAME;
-  const password = process.env.TWITTER_PASSWORD;
-  const email = process.env.TWITTER_EMAIL;
-  const cookiesEnv = process.env.TWITTER_COOKIES;
+  // ── Primary: trends24.in ────────────────────────────────
+  try {
+    const res = await fetch(`https://trends24.in/${geo}/`, {
+      headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
+      next: { revalidate: 900 },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const trends: TrendItem[] = [];
+      const seen = new Set<string>();
 
-  if (!username || !password) {
-    throw new Error("TWITTER_CREDENTIALS_MISSING");
-  }
-
-  const { Scraper } = await import("@treasure-dev/twitter-scraper");
-
-  // Reuse cached scraper if session is fresh
-  const now = Date.now();
-  if (_xScraper && now - _xScraperTs < X_SESSION_TTL) {
-    try {
-      const stillIn = await _xScraper.isLoggedIn();
-      if (stillIn) {
-        const trends: string[] = await _xScraper.getTrends();
-        return trends.map((t: string) => ({ keyword: t }));
+      // trends24.in wraps each trend in: <a href="https://twitter.com/search?q=...">NAME</a>
+      const re =
+        /<a[^>]+href="https?:\/\/(?:twitter|x)\.com\/search\?q=[^"]*"[^>]*>([^<]{1,80})<\/a>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(html)) !== null && trends.length < 25) {
+        const kw = m[1].trim();
+        if (!kw || seen.has(kw)) continue;
+        seen.add(kw);
+        trends.push({ keyword: kw });
       }
-    } catch {
-      _xScraper = null;
-    }
-  }
 
-  const scraper = new Scraper();
-
-  // If we have pre-saved cookies, use them (fastest, no login needed)
-  if (cookiesEnv) {
-    try {
-      const cookies = JSON.parse(cookiesEnv);
-      await scraper.setCookies(cookies);
-      const isIn = await scraper.isLoggedIn();
-      if (isIn) {
-        _xScraper = scraper;
-        _xScraperTs = now;
-        const trends: string[] = await scraper.getTrends();
-        return trends.map((t: string) => ({ keyword: t }));
+      // Also try class="trend-name" pattern as backup within same page
+      if (trends.length === 0) {
+        const re2 =
+          /class="trend-name[^"]*"[^>]*>([^<]{1,80})<\//gi;
+        while ((m = re2.exec(html)) !== null && trends.length < 25) {
+          const kw = m[1].trim();
+          if (!kw || seen.has(kw)) continue;
+          seen.add(kw);
+          trends.push({ keyword: kw });
+        }
       }
-    } catch {
-      // cookies expired, fall through to password login
+
+      if (trends.length > 0) return trends;
     }
+  } catch {
+    // fall through to getdaytrends
   }
 
-  // Login with username/password
-  await scraper.login(username, password, email);
-  _xScraper = scraper;
-  _xScraperTs = now;
+  // ── Fallback: getdaytrends.com ──────────────────────────
+  const res2 = await fetch(`https://getdaytrends.com/${geo}/`, {
+    headers: { "User-Agent": UA, "Accept-Language": "en-US,en;q=0.9" },
+    next: { revalidate: 900 },
+  });
+  if (!res2.ok) throw new Error(`getdaytrends HTTP ${res2.status}`);
+  const html2 = await res2.text();
 
-  const trends: string[] = await scraper.getTrends();
-  return trends.map((t: string) => ({ keyword: t }));
+  const trends2: TrendItem[] = [];
+  const seen2 = new Set<string>();
+  // getdaytrends.com uses <a class="string"> for trend name, <td class="text-muted"> for count
+  const re3 = /class="string"[^>]*>([^<]{1,80})<\/a>/gi;
+  let m2: RegExpExecArray | null;
+  while ((m2 = re3.exec(html2)) !== null && trends2.length < 25) {
+    const kw = m2[1].trim();
+    if (!kw || seen2.has(kw)) continue;
+    seen2.add(kw);
+    trends2.push({ keyword: kw });
+  }
+  if (trends2.length > 0) return trends2;
+
+  throw new Error("X trends: all sources failed");
 }
 
 // ── Route handler ─────────────────────────────────────────
@@ -260,20 +267,7 @@ export async function GET(req: NextRequest) {
         break;
 
       case "x":
-        try {
-          trends = await fetchXTrends();
-        } catch (err) {
-          if (
-            err instanceof Error &&
-            err.message === "TWITTER_CREDENTIALS_MISSING"
-          ) {
-            warning =
-              "需要配置 X 账号：在 Vercel 环境变量中添加 TWITTER_USERNAME、TWITTER_PASSWORD（建议用小号，非主账号）";
-            trends = [];
-          } else {
-            throw err;
-          }
-        }
+        trends = await fetchXTrends();
         break;
 
       default:
