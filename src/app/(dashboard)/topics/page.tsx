@@ -21,6 +21,20 @@ interface TrendItem {
   tag?: string;
 }
 
+interface ContentItem {
+  title: string;
+  heat?: string;
+  tag?: string;
+}
+
+interface PlatformResult {
+  platform: string;
+  label: string;
+  icon: string;
+  items: ContentItem[];
+  error?: string;
+}
+
 type TrendSource = "google" | "douyin" | "xiaohongshu" | "x";
 
 const COMPETITION_COLORS: Record<string, string> = {
@@ -59,7 +73,8 @@ export default function TopicsPage() {
 
   // Keyword trend search state
   const [kwSearchInput, setKwSearchInput] = useState("");
-  const [kwSearchResults, setKwSearchResults] = useState<Array<{ keyword: string; source: string }>>([]);
+  const [kwPlatforms, setKwPlatforms] = useState<PlatformResult[]>([]);
+  const [kwActiveTab, setKwActiveTab] = useState<string>("douyin");
   const [kwSearchLoading, setKwSearchLoading] = useState(false);
   const [kwSearchError, setKwSearchError] = useState<string | null>(null);
 
@@ -98,14 +113,18 @@ export default function TopicsPage() {
     if (kw) setKwSearchInput(kw);
     setKwSearchLoading(true);
     setKwSearchError(null);
-    setKwSearchResults([]);
+    setKwPlatforms([]);
     try {
       const res = await fetch(`/api/trends/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       if (!res.ok) {
         setKwSearchError(data.error || "搜索失败");
       } else {
-        setKwSearchResults(data.results ?? []);
+        const platforms: PlatformResult[] = data.platforms ?? [];
+        setKwPlatforms(platforms);
+        // Auto-select first platform that has results
+        const firstWithData = platforms.find((p) => p.items.length > 0);
+        if (firstWithData) setKwActiveTab(firstWithData.platform);
       }
     } catch {
       setKwSearchError("网络错误，请重试");
@@ -373,85 +392,118 @@ export default function TopicsPage() {
 
             {/* ── Keyword Trend Search ── */}
             <div className="border border-white/8 rounded-2xl overflow-hidden">
-              <div className="flex items-center gap-2 px-5 py-4 border-b border-white/5">
-                <span className="text-sm font-semibold">🔎 关键词热搜</span>
-                <span className="text-xs text-white/30">输入关键词，查看各平台相关热搜</span>
-              </div>
-              <div className="px-5 py-4 space-y-4">
+              {/* Header + Search input */}
+              <div className="px-5 py-4 border-b border-white/5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">🔎 关键词热内容</span>
+                  <span className="text-xs text-white/30">搜一个词，看各平台的热门内容</span>
+                </div>
                 <div className="flex gap-3">
                   <input
                     type="text"
                     value={kwSearchInput}
                     onChange={(e) => setKwSearchInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && searchKeywordTrend()}
-                    placeholder="输入关键词，如：副业、AI、减脂..."
+                    placeholder="输入关键词，如：副业、AI创业、减脂..."
                     className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors"
                   />
                   <button
                     onClick={() => searchKeywordTrend()}
                     disabled={kwSearchLoading || !kwSearchInput.trim()}
-                    className="px-5 py-2.5 rounded-xl text-sm font-medium border border-white/15 text-white/60 hover:border-white/30 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/8 hover:bg-white/15 text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap border border-white/10"
                   >
-                    {kwSearchLoading ? "搜索中..." : "查热搜"}
+                    {kwSearchLoading ? "搜索中…" : "搜索"}
                   </button>
                 </div>
-
-                {kwSearchLoading && (
-                  <div className="flex items-center gap-3 py-4">
-                    <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
-                    <span className="text-sm text-white/30">正在搜索各平台热搜...</span>
-                  </div>
-                )}
-
-                {kwSearchError && !kwSearchLoading && (
-                  <div className="flex items-center justify-between py-3 px-4 bg-red-500/5 border border-red-500/15 rounded-xl">
-                    <span className="text-sm text-red-400/80">{kwSearchError}</span>
-                    <button
-                      onClick={() => searchKeywordTrend()}
-                      className="text-xs text-white/40 hover:text-white/70 transition-colors"
-                    >
-                      重试
-                    </button>
-                  </div>
-                )}
-
-                {!kwSearchLoading && !kwSearchError && kwSearchResults.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-white/30">
-                      找到 <span className="text-white/50">{kwSearchResults.length}</span> 条相关热搜 · 点击词条用 AI 生成选题
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {kwSearchResults.map((item, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => searchHotTopics(item.keyword)}
-                          className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
-                        >
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ${
-                              item.source === "抖音"
-                                ? "bg-pink-500/20 text-pink-400"
-                                : item.source === "X"
-                                ? "bg-blue-500/20 text-blue-400"
-                                : "bg-white/10 text-white/40"
-                            }`}
-                          >
-                            {item.source}
-                          </span>
-                          <span className="text-sm text-white/70 group-hover:text-white transition-colors flex-1 truncate">
-                            {item.keyword}
-                          </span>
-                          <span className="text-white/20 group-hover:text-white/50 transition-colors text-xs flex-shrink-0">→</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {!kwSearchLoading && !kwSearchError && kwSearchResults.length === 0 && kwSearchInput && (
-                  <p className="text-xs text-white/25 text-center py-3">暂无相关热搜，请换个关键词试试</p>
-                )}
               </div>
+
+              {/* Loading */}
+              {kwSearchLoading && (
+                <div className="flex items-center justify-center gap-3 py-10">
+                  <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
+                  <span className="text-sm text-white/30">正在查询抖音 · 小红书 · X…</span>
+                </div>
+              )}
+
+              {/* Error */}
+              {kwSearchError && !kwSearchLoading && (
+                <div className="flex items-center justify-between m-4 py-3 px-4 bg-red-500/5 border border-red-500/15 rounded-xl">
+                  <span className="text-sm text-red-400/80">{kwSearchError}</span>
+                  <button onClick={() => searchKeywordTrend()} className="text-xs text-white/40 hover:text-white/70">重试</button>
+                </div>
+              )}
+
+              {/* Results — platform tabs */}
+              {!kwSearchLoading && !kwSearchError && kwPlatforms.length > 0 && (
+                <div>
+                  {/* Platform tabs */}
+                  <div className="flex gap-1 px-5 pt-4">
+                    {kwPlatforms.map((p) => (
+                      <button
+                        key={p.platform}
+                        onClick={() => setKwActiveTab(p.platform)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          kwActiveTab === p.platform
+                            ? "bg-white/10 text-white"
+                            : "text-white/35 hover:text-white/60"
+                        }`}
+                      >
+                        <span>{p.icon}</span>
+                        <span>{p.label}</span>
+                        {p.items.length > 0 && (
+                          <span className="ml-0.5 text-[10px] text-white/30">{p.items.length}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Active tab content */}
+                  {kwPlatforms.map((p) =>
+                    p.platform !== kwActiveTab ? null : (
+                      <div key={p.platform} className="px-5 py-3 space-y-1.5">
+                        {p.error && (
+                          <p className="text-xs text-yellow-400/60 pb-1">⚠ {p.error}</p>
+                        )}
+                        {p.items.length === 0 ? (
+                          <p className="text-sm text-white/25 text-center py-6">暂无数据</p>
+                        ) : (
+                          p.items.map((item, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => searchHotTopics(item.title)}
+                              className="group w-full flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
+                            >
+                              <span className="text-xs text-white/20 font-mono w-5 flex-shrink-0 text-right mt-0.5">
+                                {idx + 1}
+                              </span>
+                              <span className="text-sm text-white/70 group-hover:text-white transition-colors flex-1 leading-snug line-clamp-2">
+                                {item.title}
+                              </span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                                {item.heat && (
+                                  <span className="text-xs text-white/20 hidden sm:inline">{item.heat}</span>
+                                )}
+                                <span className="text-white/15 group-hover:text-white/50 text-xs">→</span>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )
+                  )}
+
+                  <div className="px-5 py-3 border-t border-white/5">
+                    <p className="text-xs text-white/20">点击任意内容 → AI 分析并生成选题建议</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state before search */}
+              {!kwSearchLoading && !kwSearchError && kwPlatforms.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <p className="text-sm text-white/20">输入关键词，查看抖音热视频 · 小红书热帖 · X 热推</p>
+                </div>
+              )}
             </div>
 
             {/* AI Topic Generation from keyword */}
