@@ -73,10 +73,12 @@ export default function TopicsPage() {
 
   // Keyword trend search state
   const [kwSearchInput, setKwSearchInput] = useState("");
+  const [kwTimeRange, setKwTimeRange] = useState<"24h" | "48h" | "7d">("24h");
   const [kwPlatforms, setKwPlatforms] = useState<PlatformResult[]>([]);
   const [kwActiveTab, setKwActiveTab] = useState<string>("douyin");
   const [kwSearchLoading, setKwSearchLoading] = useState(false);
   const [kwSearchError, setKwSearchError] = useState<string | null>(null);
+  const [kwLastQuery, setKwLastQuery] = useState<string | null>(null);
 
   const fetchTrends = useCallback(async (source: TrendSource) => {
     setTrendsLoading(true);
@@ -107,22 +109,25 @@ export default function TopicsPage() {
     }
   }, [mode, trendSource, fetchTrends]);
 
-  const searchKeywordTrend = async (kw?: string) => {
+  const searchKeywordTrend = async (kw?: string, tr?: "24h" | "48h" | "7d") => {
     const q = (kw ?? kwSearchInput).trim();
     if (!q) return;
+    const range = tr ?? kwTimeRange;
     if (kw) setKwSearchInput(kw);
+    setKwLastQuery(q);
     setKwSearchLoading(true);
     setKwSearchError(null);
     setKwPlatforms([]);
     try {
-      const res = await fetch(`/api/trends/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(
+        `/api/trends/search?q=${encodeURIComponent(q)}&timerange=${range}`
+      );
       const data = await res.json();
       if (!res.ok) {
         setKwSearchError(data.error || "搜索失败");
       } else {
         const platforms: PlatformResult[] = data.platforms ?? [];
         setKwPlatforms(platforms);
-        // Auto-select first platform that has results
         const firstWithData = platforms.find((p) => p.items.length > 0);
         if (firstWithData) setKwActiveTab(firstWithData.platform);
       }
@@ -132,6 +137,14 @@ export default function TopicsPage() {
       setKwSearchLoading(false);
     }
   };
+
+  // Re-search when time range changes (if a query exists)
+  useEffect(() => {
+    if (kwLastQuery) {
+      searchKeywordTrend(kwLastQuery, kwTimeRange);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kwTimeRange]);
 
   const generateAITopics = async () => {
     setLoading(true);
@@ -394,9 +407,27 @@ export default function TopicsPage() {
             <div className="border border-white/8 rounded-2xl overflow-hidden">
               {/* Header + Search input */}
               <div className="px-5 py-4 border-b border-white/5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">🔎 关键词热内容</span>
-                  <span className="text-xs text-white/30">搜一个词，看各平台的热门内容</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">🔎 关键词热内容</span>
+                    <span className="text-xs text-white/30">搜一个词，看各平台的热门内容</span>
+                  </div>
+                  {/* Time range pills */}
+                  <div className="flex gap-1 p-0.5 bg-white/5 rounded-lg">
+                    {(["24h", "48h", "7d"] as const).map((tr) => (
+                      <button
+                        key={tr}
+                        onClick={() => setKwTimeRange(tr)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                          kwTimeRange === tr
+                            ? "bg-white/15 text-white"
+                            : "text-white/30 hover:text-white/60"
+                        }`}
+                      >
+                        {tr === "24h" ? "24小时" : tr === "48h" ? "48小时" : "7天"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <input
