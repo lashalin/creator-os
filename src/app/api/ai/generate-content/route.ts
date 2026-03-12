@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { creatorProfiles } from "@/db/schema";
@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { checkAndIncrementUsage } from "@/lib/subscription";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const PLATFORM_INSTRUCTIONS: Record<string, string> = {
   小红书: "小红书风格：标题带emoji，正文分段清晰，多用「|」「✨」「💡」等符号，结尾加话题标签 #xxx，语气亲切活泼，适合图文笔记",
@@ -80,9 +80,12 @@ ${typeInstruction}
 
 直接输出内容，不需要任何解释或前言。`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = (message.content[0] as { type: string; text: string }).text;
 
     return NextResponse.json({ content: text });
   } catch (error) {
