@@ -497,24 +497,24 @@ export default function TopicsPage() {
                     p.platform !== kwActiveTab ? null : (
                       <div key={p.platform} className="px-5 py-3 space-y-1.5">
                         {/* Data type badge */}
-                        <div className="flex items-center gap-2 pb-1">
+                        <div className="flex items-center gap-2 pb-1 flex-wrap">
                           {p.dataType === "realViews" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 font-medium">
-                              ✓ 真实播放量
+                              ✓ 真实数据（含互动量）
                             </span>
                           )}
                           {p.dataType === "trending" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400/70 font-medium">
-                              📡 平台实时热榜
+                              📡 热榜话题（无法获取播放量）
                             </span>
                           )}
                           {p.dataType === "news" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-white/30 font-medium">
-                              🔍 相关内容
+                              🔍 相关内容（无法获取播放量）
                             </span>
                           )}
                           {p.error && (
-                            <p className="text-xs text-yellow-400/60">⚠ {p.error}</p>
+                            <p className="text-xs text-yellow-400/50">⚠ {p.error}</p>
                           )}
                         </div>
 
@@ -575,7 +575,7 @@ export default function TopicsPage() {
 
                   <div className="px-5 py-3 border-t border-white/5">
                     <p className="text-xs text-white/20">
-                      ✦ 点击生成AI选题 &nbsp;↗ 查看原文 &nbsp;·&nbsp; B站显示真实播放量，其他平台显示热榜实时数据
+                      ✦ 点击生成AI选题 &nbsp;↗ 查看原文 &nbsp;·&nbsp; B站/知乎/微博可获取真实数据，抖音/小红书平台封闭无法获取播放量
                     </p>
                   </div>
                 </div>
@@ -584,7 +584,8 @@ export default function TopicsPage() {
               {/* Empty state before search */}
               {!kwSearchLoading && !kwSearchError && kwPlatforms.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <p className="text-sm text-white/20">输入关键词，查看 B站真实播放量 · 抖音 · 小红书 · 微博 · 知乎 · X 热门内容</p>
+                  <p className="text-sm text-white/20">输入关键词，查看各平台热门内容</p>
+                  <p className="text-xs text-white/15">B站 · 知乎 · 微博 提供真实互动数据 &nbsp;|&nbsp; 抖音 · 小红书平台封闭无公开API</p>
                 </div>
               )}
             </div>
