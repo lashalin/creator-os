@@ -47,8 +47,42 @@ async function fetchGoogleTrends(geo = "US"): Promise<TrendItem[]> {
 }
 
 // ── 抖音热搜 ──────────────────────────────────────────────
-// Official endpoint + vvhan fallback. No auth, cached 15 min.
+// 1. iesdouyin official billboard API (no auth, works without proxy)
+// 2. douyin.com aweme API fallback
+// 3. Google News RSS last resort
 async function fetchDouyinTrends(): Promise<TrendItem[]> {
+  // Primary: iesdouyin official billboard
+  try {
+    const res = await fetch(
+      "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/?count=20",
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Referer: "https://www.douyin.com/",
+        },
+        signal: AbortSignal.timeout(8000),
+        next: { revalidate: 900 },
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const list: Array<{ word_word: string; hot_value?: number; sentence_id?: string }> =
+        data?.word_list ?? [];
+      if (list.length > 0) {
+        return list.slice(0, 20).map((item) => ({
+          keyword: item.word_word,
+          heat: item.hot_value
+            ? `${(item.hot_value / 10000).toFixed(1)}万`
+            : undefined,
+        }));
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // Secondary: douyin.com aweme endpoint
   try {
     const res = await fetch(
       "https://www.douyin.com/aweme/v1/hot/search/list/?count=30&source=6&detail_list=1",
@@ -58,6 +92,7 @@ async function fetchDouyinTrends(): Promise<TrendItem[]> {
             "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
           Referer: "https://www.douyin.com/",
         },
+        signal: AbortSignal.timeout(8000),
         next: { revalidate: 900 },
       }
     );
@@ -80,17 +115,38 @@ async function fetchDouyinTrends(): Promise<TrendItem[]> {
     // fall through
   }
 
-  // Fallback: vvhan free API
-  const res = await fetch("https://api.vvhan.com/api/hotlist/douyinHot", {
-    next: { revalidate: 900 },
-  });
-  if (!res.ok) throw new Error("Douyin fallback failed");
-  const data = await res.json();
-  const list: Array<{ title: string; desc?: string }> = data?.data ?? [];
-  return list.slice(0, 20).map((item) => ({
-    keyword: item.title,
-    heat: item.desc,
-  }));
+  // Last resort: Google News RSS for "抖音热搜"
+  try {
+    const url = "https://news.google.com/rss/search?q=%E6%8A%96%E9%9F%B3%E7%83%AD%E6%90%9C&hl=zh-CN&gl=CN&ceid=CN:zh-Hans";
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+        Accept: "application/rss+xml, text/xml",
+      },
+      signal: AbortSignal.timeout(8000),
+      next: { revalidate: 900 },
+    });
+    if (res.ok) {
+      const xml = await res.text();
+      const items: TrendItem[] = [];
+      const itemRe = /<item>([\s\S]*?)<\/item>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = itemRe.exec(xml)) !== null && items.length < 20) {
+        const block = m[1];
+        const titleMatch = block.match(/<title><!\[CDATA\[([\s\S]*?)\]\]>|<title>([\s\S]*?)<\/title>/);
+        if (!titleMatch) continue;
+        let kw = (titleMatch[1] ?? titleMatch[2] ?? "")
+          .replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+        kw = kw.replace(/\s*[-–]\s*[^-–]{2,40}$/, "").trim();
+        if (kw.length >= 3) items.push({ keyword: kw });
+      }
+      if (items.length > 0) return items;
+    }
+  } catch {
+    // fall through
+  }
+
+  throw new Error("Douyin trends: all sources failed");
 }
 
 // ── 小红书热搜 ─────────────────────────────────────────────

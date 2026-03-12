@@ -25,6 +25,7 @@ interface ContentItem {
   title: string;
   heat?: string;
   tag?: string;
+  url?: string;
 }
 
 interface PlatformResult {
