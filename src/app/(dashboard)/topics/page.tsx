@@ -34,6 +34,7 @@ interface PlatformResult {
   icon: string;
   items: ContentItem[];
   error?: string;
+  dataType?: "realViews" | "trending" | "news";
 }
 
 type TrendSource = "google" | "douyin" | "xiaohongshu" | "x";
@@ -455,7 +456,7 @@ export default function TopicsPage() {
               {kwSearchLoading && (
                 <div className="flex items-center justify-center gap-3 py-10">
                   <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
-                  <span className="text-sm text-white/30">正在查询抖音 · 小红书 · X…</span>
+                  <span className="text-sm text-white/30">正在查询 B站 · 抖音 · 小红书 · 微博 · 知乎 · X…</span>
                 </div>
               )}
 
@@ -470,13 +471,13 @@ export default function TopicsPage() {
               {/* Results — platform tabs */}
               {!kwSearchLoading && !kwSearchError && kwPlatforms.length > 0 && (
                 <div>
-                  {/* Platform tabs */}
-                  <div className="flex gap-1 px-5 pt-4">
+                  {/* Platform tabs — scrollable row */}
+                  <div className="flex gap-1 px-5 pt-4 overflow-x-auto pb-1">
                     {kwPlatforms.map((p) => (
                       <button
                         key={p.platform}
                         onClick={() => setKwActiveTab(p.platform)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                           kwActiveTab === p.platform
                             ? "bg-white/10 text-white"
                             : "text-white/35 hover:text-white/60"
@@ -495,14 +496,31 @@ export default function TopicsPage() {
                   {kwPlatforms.map((p) =>
                     p.platform !== kwActiveTab ? null : (
                       <div key={p.platform} className="px-5 py-3 space-y-1.5">
-                        {p.error && (
-                          <p className="text-xs text-yellow-400/60 pb-1">⚠ {p.error}</p>
-                        )}
+                        {/* Data type badge */}
+                        <div className="flex items-center gap-2 pb-1">
+                          {p.dataType === "realViews" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 font-medium">
+                              ✓ 真实播放量
+                            </span>
+                          )}
+                          {p.dataType === "trending" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400/70 font-medium">
+                              📡 平台实时热榜
+                            </span>
+                          )}
+                          {p.dataType === "news" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-white/30 font-medium">
+                              🔍 相关内容
+                            </span>
+                          )}
+                          {p.error && (
+                            <p className="text-xs text-yellow-400/60">⚠ {p.error}</p>
+                          )}
+                        </div>
+
                         {p.items.length === 0 ? (
                           <p className="text-sm text-white/25 text-center py-6">
-                            {kwHasTavily === false
-                              ? "配置 TAVILY_API_KEY 可获得更多结果"
-                              : "暂无数据，请换个关键词或时间范围"}
+                            暂无数据，请换个关键词或时间范围
                           </p>
                         ) : (
                           p.items.map((item, idx) => (
@@ -518,7 +536,15 @@ export default function TopicsPage() {
                               </span>
                               <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
                                 {item.heat && (
-                                  <span className="text-xs text-white/20 hidden sm:inline">{item.heat}</span>
+                                  <span
+                                    className={`text-xs hidden sm:inline ${
+                                      p.dataType === "realViews"
+                                        ? "text-green-400/60 font-medium"
+                                        : "text-white/25"
+                                    }`}
+                                  >
+                                    {item.heat}
+                                  </span>
                                 )}
                                 {item.url && (
                                   <a
@@ -547,11 +573,9 @@ export default function TopicsPage() {
                     )
                   )}
 
-                  <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between">
+                  <div className="px-5 py-3 border-t border-white/5">
                     <p className="text-xs text-white/20">
-                      {kwHasTavily
-                        ? "✦ 点击生成选题  ↗ 查看原文"
-                        : "⚡ 配置 TAVILY_API_KEY 可获取更精准结果（免费）"}
+                      ✦ 点击生成AI选题 &nbsp;↗ 查看原文 &nbsp;·&nbsp; B站显示真实播放量，其他平台显示热榜实时数据
                     </p>
                   </div>
                 </div>
@@ -560,7 +584,7 @@ export default function TopicsPage() {
               {/* Empty state before search */}
               {!kwSearchLoading && !kwSearchError && kwPlatforms.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <p className="text-sm text-white/20">输入关键词，查看抖音热视频 · 小红书热帖 · X 热推</p>
+                  <p className="text-sm text-white/20">输入关键词，查看 B站真实播放量 · 抖音 · 小红书 · 微博 · 知乎 · X 热门内容</p>
                 </div>
               )}
             </div>
