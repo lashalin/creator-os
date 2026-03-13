@@ -97,6 +97,7 @@ function CreatePageInner() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [qaAnswers, setQaAnswers] = useState<QAAnswer[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
 
   // Platform/type
   const [platform, setPlatform] = useState("小红书");
@@ -173,6 +174,7 @@ function CreatePageInner() {
   // ── INTERVIEW ──────────────────────────────────────────
   const loadQuestions = async () => {
     setLoadingQuestions(true);
+    setQuestionsError(null);
     try {
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
@@ -180,7 +182,11 @@ function CreatePageInner() {
         body: JSON.stringify({ topic: evalTitle, angle: evalAngle }),
       });
       const data = await res.json();
-      if (data.questions) {
+      if (!res.ok) {
+        setQuestionsError(data.error || "生成问题失败，请重试");
+        return;
+      }
+      if (data.questions && data.questions.length > 0) {
         setQuestions(data.questions);
         setQaAnswers(
           data.questions.map((q: Question) => ({
@@ -189,9 +195,11 @@ function CreatePageInner() {
             answer: "",
           }))
         );
+      } else {
+        setQuestionsError("AI 未能生成问题，请重试");
       }
     } catch {
-      alert("加载问题失败，请重试");
+      setQuestionsError("网络错误，请检查连接后重试");
     } finally {
       setLoadingQuestions(false);
     }
@@ -199,6 +207,7 @@ function CreatePageInner() {
 
   const goToInterview = async () => {
     setStep("interview");
+    setQuestionsError(null);
     if (questions.length === 0) {
       await loadQuestions();
     }
@@ -742,6 +751,16 @@ function CreatePageInner() {
                   <p className="text-sm text-white/30">
                     AI 正在用第一性原理设计问题...
                   </p>
+                </div>
+              ) : questionsError ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-4 border border-red-500/20 bg-red-500/5 rounded-2xl">
+                  <p className="text-sm text-red-400/80">{questionsError}</p>
+                  <button
+                    onClick={loadQuestions}
+                    className="px-5 py-2 bg-white text-black rounded-xl text-sm font-semibold hover:bg-white/90 transition-colors"
+                  >
+                    重新生成问题
+                  </button>
                 </div>
               ) : questions.length > 0 ? (
                 <div className="space-y-4">
