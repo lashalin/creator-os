@@ -82,6 +82,7 @@ export default function TopicsPage() {
   const [kwSearchError, setKwSearchError] = useState<string | null>(null);
   const [kwLastQuery, setKwLastQuery] = useState<string | null>(null);
   const [kwHasTavily, setKwHasTavily] = useState<boolean | null>(null);
+  const [kwCooldown, setKwCooldown] = useState(0); // seconds remaining
 
   const fetchTrends = useCallback(async (source: TrendSource) => {
     setTrendsLoading(true);
@@ -114,7 +115,7 @@ export default function TopicsPage() {
 
   const searchKeywordTrend = async (kw?: string, tr?: "24h" | "48h" | "7d") => {
     const q = (kw ?? kwSearchInput).trim();
-    if (!q) return;
+    if (!q || kwCooldown > 0) return;
     const range = tr ?? kwTimeRange;
     if (kw) setKwSearchInput(kw);
     setKwLastQuery(q);
@@ -139,6 +140,14 @@ export default function TopicsPage() {
       setKwSearchError("网络错误，请重试");
     } finally {
       setKwSearchLoading(false);
+      // 6s cooldown to respect TwitterAPI.io free-tier rate limit (1 req/5s)
+      setKwCooldown(6);
+      const timer = setInterval(() => {
+        setKwCooldown((prev) => {
+          if (prev <= 1) { clearInterval(timer); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
     }
   };
 
@@ -444,10 +453,10 @@ export default function TopicsPage() {
                   />
                   <button
                     onClick={() => searchKeywordTrend()}
-                    disabled={kwSearchLoading || !kwSearchInput.trim()}
-                    className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/8 hover:bg-white/15 text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap border border-white/10"
+                    disabled={kwSearchLoading || !kwSearchInput.trim() || kwCooldown > 0}
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/8 hover:bg-white/15 text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap border border-white/10 min-w-[72px]"
                   >
-                    {kwSearchLoading ? "搜索中…" : "搜索"}
+                    {kwSearchLoading ? "搜索中…" : kwCooldown > 0 ? `${kwCooldown}s` : "搜索"}
                   </button>
                 </div>
               </div>
