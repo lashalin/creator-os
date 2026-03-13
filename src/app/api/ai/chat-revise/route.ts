@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { creatorProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -91,12 +91,9 @@ ${currentContent}
 严格按照以下JSON格式返回，不要输出任何其他文字：
 {"updatedContent":"修改后的完整内容","message":"一句话说明做了什么修改"}`;
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = (message.content[0] as { type: string; text: string }).text.trim();
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
 
     // Extract JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);

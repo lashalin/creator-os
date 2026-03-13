@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { creatorProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 export async function POST(req: NextRequest) {
   try {
@@ -59,12 +59,9 @@ export async function POST(req: NextRequest) {
 
 只输出 JSON 数组，不要其他文字。`;
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = (message.content[0] as { type: string; text: string }).text;
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
 
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("No JSON");
