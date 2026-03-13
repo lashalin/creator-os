@@ -141,12 +141,15 @@ async function searchX(keyword: string): Promise<PlatformResult> {
 
 async function searchReddit(keyword: string): Promise<PlatformResult> {
   try {
-    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(keyword)}&sort=top&t=week&limit=10&type=link`;
+    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(keyword)}&sort=top&t=month&limit=10&type=link`;
 
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "CreatorOS/1.0 (content research tool)",
-        Accept: "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
       },
       signal: AbortSignal.timeout(12000),
     });
