@@ -20,7 +20,14 @@ export interface PlatformResult {
 
 // ─── X / Twitter via TwitterAPI.io ───────────────────────────────────────────
 
-async function searchX(keyword: string): Promise<PlatformResult> {
+// Helper: get ISO date string N days ago
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().split("T")[0]; // YYYY-MM-DD
+}
+
+async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
   const apiKey = process.env.TWITTERAPI_IO_KEY;
   if (!apiKey) {
     return {
@@ -33,8 +40,10 @@ async function searchX(keyword: string): Promise<PlatformResult> {
   }
 
   try {
-    // Build query: exclude retweets, accept Chinese or English
-    const rawQuery = `${keyword} -is:retweet`;
+    // Build time filter: since:YYYY-MM-DD
+    const sinceDays = timeRange === "24h" ? 1 : timeRange === "48h" ? 2 : 7;
+    const sinceDate = daysAgo(sinceDays);
+    const rawQuery = `${keyword} -is:retweet since:${sinceDate}`;
     const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(rawQuery)}&queryType=Top`;
 
     const res = await fetch(url, {
@@ -139,9 +148,13 @@ async function searchX(keyword: string): Promise<PlatformResult> {
 
 // ─── Reddit (free public API, no auth required) ───────────────────────────────
 
-async function searchReddit(keyword: string): Promise<PlatformResult> {
+async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
+  // Map timeRange to Reddit's t= parameter
+  // Reddit supports: hour, day, week, month, year, all
+  const redditT = timeRange === "24h" ? "day" : timeRange === "48h" ? "week" : "week";
+
   try {
-    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(keyword)}&sort=top&t=month&limit=10&type=link`;
+    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(keyword)}&sort=top&t=${redditT}&limit=10&type=link`;
 
     const res = await fetch(url, {
       headers: {
@@ -247,10 +260,13 @@ export async function GET(req: NextRequest) {
     }
 
     const kw = keyword.trim();
+    const rawRange = req.nextUrl.searchParams.get("timerange") ?? "7d";
+    const timeRange: "24h" | "48h" | "7d" =
+      rawRange === "24h" ? "24h" : rawRange === "48h" ? "48h" : "7d";
 
     const [xResult, redditResult] = await Promise.all([
-      searchX(kw),
-      searchReddit(kw),
+      searchX(kw, timeRange),
+      searchReddit(kw, timeRange),
     ]);
 
     return NextResponse.json({
