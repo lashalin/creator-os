@@ -77,7 +77,7 @@ export default function TopicsPage() {
   const [kwSearchInput, setKwSearchInput] = useState("");
   const [kwTimeRange, setKwTimeRange] = useState<"24h" | "48h" | "7d">("24h");
   const [kwPlatforms, setKwPlatforms] = useState<PlatformResult[]>([]);
-  const [kwActiveTab, setKwActiveTab] = useState<string>("douyin");
+  const [kwActiveTab, setKwActiveTab] = useState<string>("x");
   const [kwSearchLoading, setKwSearchLoading] = useState(false);
   const [kwSearchError, setKwSearchError] = useState<string | null>(null);
   const [kwLastQuery, setKwLastQuery] = useState<string | null>(null);
@@ -456,7 +456,7 @@ export default function TopicsPage() {
               {kwSearchLoading && (
                 <div className="flex items-center justify-center gap-3 py-10">
                   <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
-                  <span className="text-sm text-white/30">正在查询 B站 · 抖音 · 小红书 · 微博 · 知乎 · X…</span>
+                  <span className="text-sm text-white/30">正在查询 X · Reddit…</span>
                 </div>
               )}
 
@@ -575,7 +575,7 @@ export default function TopicsPage() {
 
                   <div className="px-5 py-3 border-t border-white/5">
                     <p className="text-xs text-white/20">
-                      ✦ 点击生成AI选题 &nbsp;↗ 查看原文 &nbsp;·&nbsp; B站/知乎/微博可获取真实数据，抖音/小红书平台封闭无法获取播放量
+                      ✦ 点击生成AI选题 &nbsp;↗ 查看原文 &nbsp;·&nbsp; X 显示真实浏览/点赞量，Reddit 显示真实票数和评论数
                     </p>
                   </div>
                 </div>
@@ -584,8 +584,8 @@ export default function TopicsPage() {
               {/* Empty state before search */}
               {!kwSearchLoading && !kwSearchError && kwPlatforms.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <p className="text-sm text-white/20">输入关键词，查看各平台热门内容</p>
-                  <p className="text-xs text-white/15">B站 · 知乎 · 微博 提供真实互动数据 &nbsp;|&nbsp; 抖音 · 小红书平台封闭无公开API</p>
+                  <p className="text-sm text-white/20">输入关键词，查看 X 和 Reddit 的热门内容</p>
+                  <p className="text-xs text-white/15">X 提供真实浏览量与点赞数 &nbsp;|&nbsp; Reddit 提供真实票数与评论数</p>
                 </div>
               )}
             </div>
