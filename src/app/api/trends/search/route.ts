@@ -146,101 +146,286 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
   }
 }
 
-// ─── Reddit (free public API, no auth required) ───────────────────────────────
+// ─── Hacker News via Algolia API (free, no auth, works from Vercel) ──────────
 
-async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
-  // Map timeRange to Reddit's t= parameter
-  // Reddit supports: hour, day, week, month, year, all
-  const redditT = timeRange === "24h" ? "day" : timeRange === "48h" ? "week" : "week";
+async function searchHN(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
+  try {
+    // Convert timeRange to a Unix timestamp filter
+    const nowSec = Math.floor(Date.now() / 1000);
+    const secondsMap = { "24h": 86400, "48h": 172800, "7d": 604800 };
+    const since = nowSec - secondsMap[timeRange];
+
+    // Algolia HN search API — completely free, no auth, works from any server
+    const url =
+      `https://hn.algolia.com/api/v1/search?` +
+      `query=${encodeURIComponent(keyword)}` +
+      `&tags=story` +
+      `&numericFilters=created_at_i>${since},points>0` +
+      `&hitsPerPage=10` +
+      `&attributesToRetrieve=title,url,points,num_comments,objectID`;
+
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      console.warn(`[searchHN] Algolia error: ${res.status}`);
+      return {
+        platform: "hn",
+        label: "Hacker News",
+        icon: "🟠",
+        items: [],
+        error: `HN API 错误 (${res.status})`,
+      };
+    }
+
+    const data = await res.json();
+
+    type HNHit = {
+      title?: string;
+      url?: string;
+      objectID: string;
+      points?: number;
+      num_comments?: number;
+    };
+
+    const hits: HNHit[] = data?.hits ?? [];
+
+    const items: ContentItem[] = hits
+      .filter((h) => h.title && h.title.length > 3)
+      .map((h) => {
+        const points = h.points ?? 0;
+        const comments = h.num_comments ?? 0;
+
+        let heat: string | undefined;
+        if (points >= 500) {
+          heat = `${points}↑ · ${comments}💬`;
+        } else if (points >= 100) {
+          heat = `${points}↑ · ${comments}💬`;
+        } else if (points > 0) {
+          heat = `${points}↑`;
+        }
+
+        return {
+          title: h.title ?? "",
+          heat,
+          url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+        };
+      });
+
+    if (items.length > 0) {
+      return {
+        platform: "hn",
+        label: "Hacker News",
+        icon: "🟠",
+        items,
+        dataType: "realViews",
+      };
+    }
+
+    // If strict filter returned nothing, retry without time filter
+    const fallbackUrl =
+      `https://hn.algolia.com/api/v1/search?` +
+      `query=${encodeURIComponent(keyword)}` +
+      `&tags=story` +
+      `&hitsPerPage=10` +
+      `&attributesToRetrieve=title,url,points,num_comments,objectID`;
+
+    const res2 = await fetch(fallbackUrl, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (res2.ok) {
+      const data2 = await res2.json();
+      const hits2: HNHit[] = data2?.hits ?? [];
+      const items2: ContentItem[] = hits2
+        .filter((h) => h.title && h.title.length > 3)
+        .map((h) => ({
+          title: h.title ?? "",
+          heat: h.points ? `${h.points}↑` : undefined,
+          url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+        }));
+
+      if (items2.length > 0) {
+        return {
+          platform: "hn",
+          label: "Hacker News",
+          icon: "🟠",
+          items: items2,
+          dataType: "realViews",
+        };
+      }
+    }
+
+    return {
+      platform: "hn",
+      label: "Hacker News",
+      icon: "🟠",
+      items: [],
+      error: `未找到"${keyword}"相关讨论，可尝试英文关键词`,
+    };
+  } catch (err) {
+    console.error("[searchHN] error:", err);
+    return {
+      platform: "hn",
+      label: "Hacker News",
+      icon: "🟠",
+      items: [],
+      error: "HN 搜索暂时不可用，请稍后重试",
+    };
+  }
+}
+
+// ─── Reddit via OAuth2 client credentials ────────────────────────────────────
+
+// Cache token in memory (reused across requests in the same function instance)
+let redditTokenCache: { token: string; expiresAt: number } | null = null;
+
+async function getRedditToken(): Promise<string | null> {
+  const clientId = process.env.REDDIT_CLIENT_ID;
+  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  // Return cached token if still valid (5 min buffer)
+  if (redditTokenCache && Date.now() < redditTokenCache.expiresAt - 300_000) {
+    return redditTokenCache.token;
+  }
 
   try {
-    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(keyword)}&sort=top&t=${redditT}&limit=10&type=link`;
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "CreatorOS/1.0 by CreatorOS",
+      },
+      body: "grant_type=client_credentials",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.access_token) return null;
+
+    redditTokenCache = {
+      token: data.access_token,
+      expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+    };
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
+  const clientId = process.env.REDDIT_CLIENT_ID;
+  if (!clientId) {
+    return {
+      platform: "reddit",
+      label: "Reddit",
+      icon: "🟧",
+      items: [],
+      error: "Reddit API not configured — add REDDIT_CLIENT_ID & REDDIT_CLIENT_SECRET",
+    };
+  }
+
+  try {
+    const token = await getRedditToken();
+    if (!token) {
+      return {
+        platform: "reddit",
+        label: "Reddit",
+        icon: "🟧",
+        items: [],
+        error: "Reddit auth failed — check REDDIT_CLIENT_ID & REDDIT_CLIENT_SECRET",
+      };
+    }
+
+    const tMap = { "24h": "day", "48h": "week", "7d": "week" };
+    const t = tMap[timeRange];
+    const url =
+      `https://oauth.reddit.com/search?` +
+      `q=${encodeURIComponent(keyword)}&sort=top&t=${t}&limit=15&type=link&raw_json=1`;
 
     const res = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Accept: "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "CreatorOS/1.0 by CreatorOS",
+        Accept: "application/json",
       },
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) {
       return {
         platform: "reddit",
         label: "Reddit",
-        icon: "🔴",
+        icon: "🟧",
         items: [],
-        error: `Reddit API 错误 (${res.status})`,
+        error: `Reddit API error (${res.status})`,
       };
     }
 
     const data = await res.json();
 
-    type RedditChild = {
+    type RedditPost = {
       data: {
-        title: string;
-        url?: string;
-        permalink: string;
-        score: number;
-        num_comments: number;
-        subreddit: string;
+        title?: string;
+        permalink?: string;
+        score?: number;
+        num_comments?: number;
+        subreddit?: string;
       };
     };
 
-    const children: RedditChild[] = data?.data?.children ?? [];
+    const posts: RedditPost[] = data?.data?.children ?? [];
 
-    const items: ContentItem[] = children
+    const items: ContentItem[] = posts
       .filter((p) => p.data?.title && p.data.title.length > 3)
       .slice(0, 10)
       .map((p) => {
-        const d = p.data;
-        const score = d.score ?? 0;
-        const comments = d.num_comments ?? 0;
+        const { title, permalink, score, num_comments } = p.data;
+        const points = score ?? 0;
+        const comments = num_comments ?? 0;
 
         let heat: string | undefined;
-        if (score >= 10_000) {
-          heat = `${(score / 1000).toFixed(0)}k↑ · ${comments}💬`;
-        } else if (score >= 1_000) {
-          heat = `${score}↑ · ${comments}💬`;
-        } else if (score > 0) {
-          heat = `${score}↑`;
+        if (points >= 10000) {
+          heat = `${(points / 1000).toFixed(0)}k↑ · ${comments}💬`;
+        } else if (points >= 1000) {
+          heat = `${(points / 1000).toFixed(1)}k↑ · ${comments}💬`;
+        } else if (points > 0) {
+          heat = `${points}↑ · ${comments}💬`;
         }
 
         return {
-          title: d.title,
+          title: title ?? "",
           heat,
-          url: `https://www.reddit.com${d.permalink}`,
+          url: permalink ? `https://www.reddit.com${permalink}` : undefined,
         };
-      });
+      })
+      .filter((i) => i.title.length > 3);
 
     if (items.length > 0) {
-      return {
-        platform: "reddit",
-        label: "Reddit",
-        icon: "🔴",
-        items,
-        dataType: "realViews",
-      };
+      return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
     }
 
     return {
       platform: "reddit",
       label: "Reddit",
-      icon: "🔴",
+      icon: "🟧",
       items: [],
-      error: `未找到"${keyword}"相关帖子，可尝试英文关键词`,
+      error: `No Reddit posts found for "${keyword}", try different keywords`,
     };
   } catch (err) {
     console.error("[searchReddit] error:", err);
     return {
       platform: "reddit",
       label: "Reddit",
-      icon: "🔴",
+      icon: "🟧",
       items: [],
-      error: "Reddit 搜索暂时不可用，请稍后重试",
+      error: "Reddit search temporarily unavailable",
     };
   }
 }

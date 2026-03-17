@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       topic,
       platform,
       contentType,
+      locale,
     }: {
       currentContent: string;
       userMessage: string;
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
       topic: string;
       platform: string;
       contentType: string;
+      locale?: string;
     } = await req.json();
 
     if (!currentContent?.trim() || !userMessage?.trim()) {
@@ -48,27 +50,58 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     const dna = profiles[0]?.dna;
+    const isEn = locale === "en";
+
     const dnaStyle = dna
-      ? `创作者风格：${dna.languageStyle}，人设：${dna.persona}`
+      ? isEn
+        ? `Creator style: ${dna.languageStyle}, persona: ${dna.persona}`
+        : `创作者风格：${dna.languageStyle}，人设：${dna.persona}`
+      : isEn
+      ? "Natural and authentic creator style"
       : "自然真实的创作者风格";
 
     // Build conversation history context
     const historyText =
       chatHistory && chatHistory.length > 0
-        ? "\n对话记录：\n" +
-          chatHistory
-            .map(
-              (m) =>
-                `${m.role === "user" ? "用户" : "AI助手"}：${m.content}`
-            )
-            .join("\n") +
-          "\n"
+        ? isEn
+          ? "\nConversation history:\n" +
+            chatHistory
+              .map((m) => `${m.role === "user" ? "User" : "AI Assistant"}: ${m.content}`)
+              .join("\n") +
+            "\n"
+          : "\n对话记录：\n" +
+            chatHistory
+              .map((m) => `${m.role === "user" ? "用户" : "AI助手"}：${m.content}`)
+              .join("\n") +
+            "\n"
         : "";
 
     const isScript = contentType === "script";
-    const platformLabel = isScript ? "口播稿" : `${platform}图文`;
 
-    const prompt = `你是专业内容编辑AI助手，正在帮助创作者修改${platformLabel}内容。
+    const prompt = isEn
+      ? `You are a professional AI content editor helping a creator revise their ${isScript ? "script" : `${platform} post`}.
+
+${dnaStyle}
+Topic: ${topic}
+Platform: ${platform}
+${historyText}
+Current content:
+---
+${currentContent}
+---
+
+User's revision request: ${userMessage}
+
+Please revise the content according to the user's request:
+1. Accurately understand the user's intent and make precise edits
+2. Maintain the creator's language style
+3. Ensure the revised content still fits ${platform} platform norms
+4. Make changes flow naturally without visible edit marks
+5. If it's a script, maintain conversational tone and rhythm
+
+Return ONLY the following JSON format, no other text:
+{"updatedContent":"the complete revised content","message":"one sentence describing what was changed"}`
+      : `你是专业内容编辑AI助手，正在帮助创作者修改${isScript ? "口播稿" : `${platform}图文`}内容。
 
 ${dnaStyle}
 话题：${topic}
@@ -109,7 +142,7 @@ ${currentContent}
 
     return NextResponse.json({
       updatedContent: parsed.updatedContent,
-      assistantMessage: parsed.message || "已根据你的要求修改",
+      assistantMessage: parsed.message || (isEn ? "Done! Content updated as requested." : "已根据你的要求修改"),
     });
   } catch (error) {
     console.error("Chat revise error:", error);

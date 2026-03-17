@@ -48,16 +48,22 @@ const COMPETITION_COLORS: Record<string, string> = {
   High: "text-red-400",
 };
 
-const TREND_SOURCES: { key: TrendSource; label: string; icon: string }[] = [
-  { key: "google", label: "Google 趋势", icon: "🔍" },
-  { key: "douyin", label: "抖音热搜", icon: "🎵" },
-  { key: "xiaohongshu", label: "小红书", icon: "📕" },
-  { key: "x", label: "X 热点", icon: "𝕏" },
-];
+const TREND_SOURCE_ICONS: Record<TrendSource, string> = {
+  google: "🔍",
+  douyin: "🎵",
+  xiaohongshu: "📕",
+  x: "𝕏",
+};
 
 export default function TopicsPage() {
   const router = useRouter();
   const { t, locale } = useLanguage();
+  const TREND_SOURCES: { key: TrendSource; label: string; icon: string }[] = [
+    { key: "google", label: t.trendSources.google, icon: "🔍" },
+    { key: "douyin", label: t.trendSources.douyin, icon: "🎵" },
+    { key: "xiaohongshu", label: t.trendSources.xiaohongshu, icon: "📕" },
+    { key: "x", label: t.trendSources.x, icon: "𝕏" },
+  ];
 
   const [mode, setMode] = useState<"ai" | "hot">("ai");
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -93,14 +99,14 @@ export default function TopicsPage() {
       const res = await fetch(`/api/trends?source=${source}`);
       const data = await res.json();
       if (!res.ok) {
-        setTrendsError(data.error || "获取失败");
+        setTrendsError(data.error || t.fetchFailed);
       } else {
         setTrends(data.trends ?? []);
         setTrendsWarning(data.warning ?? null);
         setTrendsFetchedAt(data.fetched_at ?? null);
       }
     } catch {
-      setTrendsError("网络错误，请重试");
+      setTrendsError(t.networkError);
     } finally {
       setTrendsLoading(false);
     }
@@ -128,7 +134,7 @@ export default function TopicsPage() {
       );
       const data = await res.json();
       if (!res.ok) {
-        setKwSearchError(data.error || "搜索失败");
+        setKwSearchError(data.error || t.searchFailed);
       } else {
         const platforms: PlatformResult[] = data.platforms ?? [];
         setKwPlatforms(platforms);
@@ -137,7 +143,7 @@ export default function TopicsPage() {
         if (firstWithData) setKwActiveTab(firstWithData.platform);
       }
     } catch {
-      setKwSearchError("网络错误，请重试");
+      setKwSearchError(t.networkError);
     } finally {
       setKwSearchLoading(false);
       // 6s cooldown to respect TwitterAPI.io free-tier rate limit (1 req/5s)
@@ -234,7 +240,7 @@ export default function TopicsPage() {
 
   const formatFetchedAt = (iso: string) => {
     const d = new Date(iso);
-    return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")} 更新`;
+    return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")} ${t.updatedAt}`;
   };
 
   return (
@@ -298,7 +304,7 @@ export default function TopicsPage() {
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">📡 实时热榜</span>
+                  <span className="text-sm font-semibold">{t.realTimeTrends}</span>
                   {trendsFetchedAt && !trendsLoading && (
                     <span className="text-xs text-white/25">{formatFetchedAt(trendsFetchedAt)}</span>
                   )}
@@ -327,7 +333,7 @@ export default function TopicsPage() {
                     className="text-xs text-white/30 hover:text-white/60 transition-colors disabled:opacity-40"
                     title="刷新"
                   >
-                    {trendsLoading ? "⟳" : "↻ 刷新"}
+                    {trendsLoading ? t.refreshing : t.refreshBtn}
                   </button>
                 </div>
               </div>
@@ -337,7 +343,7 @@ export default function TopicsPage() {
                 {trendsLoading && (
                   <div className="flex items-center justify-center py-8 gap-3">
                     <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
-                    <span className="text-sm text-white/30">正在获取实时热榜...</span>
+                    <span className="text-sm text-white/30">{t.loadingTrends}</span>
                   </div>
                 )}
 
@@ -354,7 +360,7 @@ export default function TopicsPage() {
                       onClick={() => fetchTrends(trendSource)}
                       className="text-xs text-white/40 hover:text-white/70 transition-colors"
                     >
-                      重试
+                      {t.retryBtn}
                     </button>
                   </div>
                 )}
@@ -400,19 +406,16 @@ export default function TopicsPage() {
                 )}
 
                 {!trendsLoading && !trendsError && !trendsWarning && trends.length === 0 && (
-                  <p className="text-sm text-white/30 text-center py-6">暂无数据，请刷新重试</p>
+                  <p className="text-sm text-white/30 text-center py-6">{t.noTrendsData}</p>
                 )}
               </div>
 
               {/* Footer note */}
               <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between">
                 <p className="text-xs text-white/20">
-                  {trendSource === "google" && "数据来源：Google Trends 官方接口，约1小时更新"}
-                  {trendSource === "douyin" && "数据来源：抖音热搜榜官方接口，约15分钟更新"}
-                  {trendSource === "xiaohongshu" && "数据来源：小红书热搜榜，约15分钟更新"}
-                  {trendSource === "x" && "数据来源：trends24.in 聚合 X/Twitter 实时热榜，约15分钟更新"}
+                  {t.trendSourceFooter[trendSource]}
                 </p>
-                <p className="text-xs text-white/20">点击任意词 → AI 生成选题建议</p>
+                <p className="text-xs text-white/20">{t.clickForAI}</p>
               </div>
             </div>
 
@@ -422,8 +425,8 @@ export default function TopicsPage() {
               <div className="px-5 py-4 border-b border-white/5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">🔎 关键词热内容</span>
-                    <span className="text-xs text-white/30">搜一个词，看各平台的热门内容</span>
+                    <span className="text-sm font-semibold">{t.kwTitle}</span>
+                    <span className="text-xs text-white/30">{t.kwSubtitle}</span>
                   </div>
                   {/* Time range pills */}
                   <div className="flex gap-1 p-0.5 bg-white/5 rounded-lg">
@@ -437,7 +440,7 @@ export default function TopicsPage() {
                             : "text-white/30 hover:text-white/60"
                         }`}
                       >
-                        {tr === "24h" ? "24小时" : tr === "48h" ? "48小时" : "7天"}
+                        {t.timeRange[tr]}
                       </button>
                     ))}
                   </div>
@@ -448,7 +451,7 @@ export default function TopicsPage() {
                     value={kwSearchInput}
                     onChange={(e) => setKwSearchInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && searchKeywordTrend()}
-                    placeholder="输入关键词，如：副业、AI创业、减脂..."
+                    placeholder={t.kwPlaceholder}
                     className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors"
                   />
                   <button
@@ -456,7 +459,7 @@ export default function TopicsPage() {
                     disabled={kwSearchLoading || !kwSearchInput.trim() || kwCooldown > 0}
                     className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/8 hover:bg-white/15 text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap border border-white/10 min-w-[72px]"
                   >
-                    {kwSearchLoading ? "搜索中…" : kwCooldown > 0 ? `${kwCooldown}s` : "搜索"}
+                    {kwSearchLoading ? t.searching : kwCooldown > 0 ? `${kwCooldown}s` : t.searchBtn}
                   </button>
                 </div>
               </div>
@@ -465,7 +468,7 @@ export default function TopicsPage() {
               {kwSearchLoading && (
                 <div className="flex items-center justify-center gap-3 py-10">
                   <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin" />
-                  <span className="text-sm text-white/30">正在查询 X · Reddit…</span>
+                  <span className="text-sm text-white/30">{t.loadingKwSearch}</span>
                 </div>
               )}
 
@@ -473,7 +476,7 @@ export default function TopicsPage() {
               {kwSearchError && !kwSearchLoading && (
                 <div className="flex items-center justify-between m-4 py-3 px-4 bg-red-500/5 border border-red-500/15 rounded-xl">
                   <span className="text-sm text-red-400/80">{kwSearchError}</span>
-                  <button onClick={() => searchKeywordTrend()} className="text-xs text-white/40 hover:text-white/70">重试</button>
+                  <button onClick={() => searchKeywordTrend()} className="text-xs text-white/40 hover:text-white/70">{t.retryBtn}</button>
                 </div>
               )}
 
@@ -509,17 +512,17 @@ export default function TopicsPage() {
                         <div className="flex items-center gap-2 pb-1 flex-wrap">
                           {p.dataType === "realViews" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 font-medium">
-                              ✓ 真实数据（含互动量）
+                              {t.realDataBadge}
                             </span>
                           )}
                           {p.dataType === "trending" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400/70 font-medium">
-                              📡 热榜话题（无法获取播放量）
+                              {t.trendingBadge}
                             </span>
                           )}
                           {p.dataType === "news" && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-white/30 font-medium">
-                              🔍 相关内容（无法获取播放量）
+                              {t.relatedBadge}
                             </span>
                           )}
                           {p.error && (
@@ -529,7 +532,7 @@ export default function TopicsPage() {
 
                         {p.items.length === 0 ? (
                           <p className="text-sm text-white/25 text-center py-6">
-                            暂无数据，请换个关键词或时间范围
+                            {t.noKwResults}
                           </p>
                         ) : (
                           p.items.map((item, idx) => (
@@ -583,9 +586,7 @@ export default function TopicsPage() {
                   )}
 
                   <div className="px-5 py-3 border-t border-white/5">
-                    <p className="text-xs text-white/20">
-                      ✦ 点击生成AI选题 &nbsp;↗ 查看原文 &nbsp;·&nbsp; X 显示真实浏览/点赞量，Reddit 显示真实票数和评论数
-                    </p>
+                    <p className="text-xs text-white/20" dangerouslySetInnerHTML={{ __html: t.kwFooter }} />
                   </div>
                 </div>
               )}
@@ -593,15 +594,15 @@ export default function TopicsPage() {
               {/* Empty state before search */}
               {!kwSearchLoading && !kwSearchError && kwPlatforms.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <p className="text-sm text-white/20">输入关键词，查看 X 和 Reddit 的热门内容</p>
-                  <p className="text-xs text-white/15">X 提供真实浏览量与点赞数 &nbsp;|&nbsp; Reddit 提供真实票数与评论数</p>
+                  <p className="text-sm text-white/20">{t.kwEmptyState}</p>
+                  <p className="text-xs text-white/15" dangerouslySetInnerHTML={{ __html: t.kwEmptyStateSub }} />
                 </div>
               )}
             </div>
 
             {/* AI Topic Generation from keyword */}
             <div className="space-y-2">
-              <p className="text-xs text-white/30">或直接输入关键词，让 AI 生成选题</p>
+              <p className="text-xs text-white/30">{t.aiFromKw}</p>
               <div className="flex gap-3">
                 <input
                   type="text"
@@ -620,7 +621,7 @@ export default function TopicsPage() {
                   disabled={loading || !hotKeyword.trim()}
                   className="bg-white text-black px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? t.loadingTopics : "AI 生成选题"}
+                  {loading ? t.loadingTopics : t.aiGenerateTopics}
                 </button>
               </div>
             </div>
@@ -640,13 +641,11 @@ export default function TopicsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <p className="text-xs text-white/30">
-                {locale === "zh"
-                  ? `共 ${topics.length} 个选题建议`
-                  : `${topics.length} topic suggestions`}
+                {t.topicCount(topics.length)}
               </p>
               {hotKeyword && (
                 <span className="text-xs text-white/25">
-                  基于关键词：<span className="text-white/50">{hotKeyword}</span>
+                  {t.basedOnKeyword}<span className="text-white/50">{hotKeyword}</span>
                 </span>
               )}
             </div>

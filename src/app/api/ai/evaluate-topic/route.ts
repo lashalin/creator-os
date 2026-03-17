@@ -12,16 +12,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    const { topic, material } = await req.json();
+    const { topic, material, locale } = await req.json();
     if (!topic && !material) {
       return NextResponse.json({ error: "请提供话题或素材" }, { status: 400 });
     }
 
-    const inputContent = material
-      ? `用户提供的原始素材：\n${material.slice(0, 2000)}`
-      : `用户想写的话题：${topic}`;
+    const isEn = locale === "en";
 
-    const prompt = `你是一位资深内容策略顾问，擅长评估内容选题潜力。
+    const inputContent = material
+      ? (isEn ? `User's raw material:\n${material.slice(0, 2000)}` : `用户提供的原始素材：\n${material.slice(0, 2000)}`)
+      : (isEn ? `User's topic idea: ${topic}` : `用户想写的话题：${topic}`);
+
+    const prompt = isEn
+      ? `You are a senior content strategy advisor specializing in evaluating content topic potential.
+
+${inputContent}
+
+Deeply evaluate this topic/material and output JSON:
+{
+  "refinedTitle": "Refined topic title (compelling, under 15 words)",
+  "coreAngle": "Best angle description (under 30 words)",
+  "evaluation": {
+    "viralScore": 85,
+    "differentiationScore": 72,
+    "commercialScore": 68,
+    "summary": "One-sentence overall assessment (under 30 words)",
+    "strengths": ["Strength 1", "Strength 2"],
+    "suggestions": ["Improvement 1", "Improvement 2"]
+  },
+  "recommendedPlatforms": ["X", "YouTube"],
+  "contentType": "graphic"
+}
+
+Output JSON only, no other text.`
+      : `你是一位资深内容策略顾问，擅长评估内容选题潜力。
 
 ${inputContent}
 

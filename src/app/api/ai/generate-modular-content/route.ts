@@ -235,6 +235,7 @@ export async function POST(req: NextRequest) {
       contentType,
       qaAnswers,
       sourceMaterial,
+      locale,
     } = await req.json();
 
     if (!topic || !platform) {
@@ -264,6 +265,8 @@ export async function POST(req: NextRequest) {
       ? `人设：${dna.persona}；语言风格：${dna.languageStyle}；差异点：${dna.differentiation}；爆款规律：${dna.viralPattern}；目标受众：${profile?.targetAudience || "普通大众"}`
       : "专业内容创作者，自然真实风格，注重干货和实用性";
 
+    const isEn = locale === "en";
+
     const qaContext =
       qaAnswers && qaAnswers.length > 0
         ? qaAnswers
@@ -273,11 +276,11 @@ export async function POST(req: NextRequest) {
                 `Q: ${qa.question}\nA: ${qa.answer}`
             )
             .join("\n\n")
-        : "暂无访谈内容";
+        : (isEn ? "No interview answers provided" : "暂无访谈内容");
 
     const material = (sourceMaterial || "").trim();
 
-    const prompt = buildPlatformPrompt(
+    let prompt = buildPlatformPrompt(
       platform,
       contentType,
       topic,
@@ -286,6 +289,10 @@ export async function POST(req: NextRequest) {
       qaContext,
       material
     );
+
+    if (isEn) {
+      prompt += "\n\nIMPORTANT: Write the entire content in English. All text must be in English.";
+    }
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(prompt);

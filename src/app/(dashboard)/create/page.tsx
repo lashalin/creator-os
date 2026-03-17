@@ -2,8 +2,17 @@
 import { useState, Suspense, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useLanguage } from "@/contexts/LanguageContext";
 
-const PLATFORMS = ["小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
+const PLATFORMS_ZH = ["小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
+const PLATFORMS_EN: Record<string, string> = {
+  "小红书": "Xiaohongshu",
+  "公众号": "WeChat Official",
+  "X": "X",
+  "Instagram": "Instagram",
+  "YouTube": "YouTube",
+  "抖音": "TikTok",
+};
 
 type Step = "entry" | "evaluate" | "interview" | "editor";
 type EntryMode = "hot" | "topic" | "material";
@@ -41,17 +50,6 @@ interface ChatMessage {
   content: string;
 }
 
-const QUICK_REVISIONS = [
-  "开头更抓眼球",
-  "语言更口语化",
-  "结尾更有力",
-  "加入真实故事",
-  "精简20%",
-  "加入数据支撑",
-  "更符合平台风格",
-  "总分总结构",
-];
-
 function ScoreBar({ score, label }: { score: number; label: string }) {
   const color =
     score >= 80 ? "bg-green-400" : score >= 60 ? "bg-yellow-400" : "bg-red-400";
@@ -72,6 +70,7 @@ function ScoreBar({ score, label }: { score: number; label: string }) {
 }
 
 function CreatePageInner() {
+  const { t, locale } = useLanguage();
   const searchParams = useSearchParams();
 
   const urlTitle = searchParams.get("title") || "";
@@ -103,7 +102,7 @@ function CreatePageInner() {
   const [platform, setPlatform] = useState("小红书");
   const [contentType, setContentType] = useState("graphic");
 
-  // Editor state (new chatbot-based)
+  // Editor state
   const [content, setContent] = useState("");
   const [contentId, setContentId] = useState<string | null>(null);
   const [generatingContent, setGeneratingContent] = useState(false);
@@ -153,7 +152,7 @@ function CreatePageInner() {
       const res = await fetch("/api/ai/evaluate-topic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, locale }),
       });
       const data = await res.json();
       if (data.refinedTitle) {
@@ -179,11 +178,11 @@ function CreatePageInner() {
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: evalTitle, angle: evalAngle }),
+        body: JSON.stringify({ topic: evalTitle, angle: evalAngle, locale }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setQuestionsError(data.error || "生成问题失败，请重试");
+        setQuestionsError(t.questionsGenFailed);
         return;
       }
       if (data.questions && data.questions.length > 0) {
@@ -196,10 +195,10 @@ function CreatePageInner() {
           }))
         );
       } else {
-        setQuestionsError("AI 未能生成问题，请重试");
+        setQuestionsError(t.questionsAIFailed);
       }
     } catch {
-      setQuestionsError("网络错误，请检查连接后重试");
+      setQuestionsError(t.networkError);
     } finally {
       setLoadingQuestions(false);
     }
@@ -229,14 +228,12 @@ function CreatePageInner() {
       setSaveStatus("saving");
       try {
         if (existingId) {
-          // PATCH existing
           await fetch(`/api/content/${existingId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: newContent }),
           });
         } else {
-          // POST new draft
           const res = await fetch("/api/content", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -283,6 +280,7 @@ function CreatePageInner() {
           contentType,
           qaAnswers: qaAnswers.filter((qa) => qa.answer.trim()),
           sourceMaterial: materialInput.trim() || undefined,
+          locale,
         }),
       });
       const data = await res.json();
@@ -295,13 +293,12 @@ function CreatePageInner() {
       if (data.content) {
         setContent(data.content);
         setStep("editor");
-        // Auto-save immediately
         await autoSave(data.content, null);
       } else {
-        alert(data.error || "生成失败，请重试");
+        alert(data.error || t.generateFailed);
       }
     } catch {
-      alert("生成失败，请重试");
+      alert(t.generateFailed);
     } finally {
       setGeneratingContent(false);
     }
@@ -338,22 +335,21 @@ function CreatePageInner() {
         setContent(data.updatedContent);
         const aiMsg: ChatMessage = {
           role: "assistant",
-          content: data.assistantMessage || "已根据你的要求修改",
+          content: data.assistantMessage || t.aiModified,
         };
         setChatMessages([...newMessages, aiMsg]);
-        // Auto-save updated content
         await autoSave(data.updatedContent, contentId);
       } else {
         const errMsg: ChatMessage = {
           role: "assistant",
-          content: "修改失败，请重试",
+          content: t.modifyFailed,
         };
         setChatMessages([...newMessages, errMsg]);
       }
     } catch {
       const errMsg: ChatMessage = {
         role: "assistant",
-        content: "网络错误，请重试",
+        content: t.networkError,
       };
       setChatMessages([...newMessages, errMsg]);
     } finally {
@@ -378,18 +374,18 @@ function CreatePageInner() {
             href="/topics"
             className="text-xs text-white/30 hover:text-white/60 transition-colors"
           >
-            ← 选题雷达
+            {t.backToTopics}
           </Link>
-          <span className="text-sm font-semibold">内容创作</span>
+          <span className="text-sm font-semibold">{t.createNavTitle}</span>
         </div>
         <div className="flex items-center gap-6">
           {/* Step indicator */}
           <div className="hidden sm:flex items-center gap-2">
             {[
-              { key: "entry", label: "选择入口" },
-              { key: "evaluate", label: "评估选题" },
-              { key: "interview", label: "深度访谈" },
-              { key: "editor", label: "内容编辑" },
+              { key: "entry", label: t.stepEntryLabel },
+              { key: "evaluate", label: t.stepEvaluateLabel },
+              { key: "interview", label: t.stepInterviewLabel },
+              { key: "editor", label: t.stepEditorLabel },
             ].map((s, i) => {
               const stepOrder = ["entry", "evaluate", "interview", "editor"];
               const currentIdx = stepOrder.indexOf(step);
@@ -429,7 +425,7 @@ function CreatePageInner() {
             href="/library"
             className="text-xs text-white/30 hover:text-white/60 transition-colors"
           >
-            内容库
+            {t.library}
           </Link>
         </div>
       </nav>
@@ -447,8 +443,8 @@ function CreatePageInner() {
           {step === "entry" && (
             <div className="space-y-8">
               <div className="space-y-2">
-                <h1 className="text-2xl font-bold">开始创作</h1>
-                <p className="text-sm text-white/40">选择你的创作起点</p>
+                <h1 className="text-2xl font-bold">{t.startCreating}</h1>
+                <p className="text-sm text-white/40">{t.chooseStartingPoint}</p>
               </div>
 
               <div className="grid grid-cols-1 gap-4">
@@ -461,12 +457,12 @@ function CreatePageInner() {
                   </div>
                   <div className="space-y-1 flex-1">
                     <h3 className="font-semibold group-hover:text-white transition-colors">
-                      行业热点选题
+                      {t.hotTopicCard}
                     </h3>
                     <p className="text-sm text-white/40">
-                      从热点话题中选取选题，AI 自动匹配最优角度和平台
+                      {t.hotTopicCardDesc}
                     </p>
-                    <p className="text-xs text-white/20 mt-2">→ 去选题雷达</p>
+                    <p className="text-xs text-white/20 mt-2">{t.goToTopicRadar}</p>
                   </div>
                 </Link>
 
@@ -476,9 +472,9 @@ function CreatePageInner() {
                       ✏️
                     </div>
                     <div className="space-y-1">
-                      <h3 className="font-semibold">自定义选题</h3>
+                      <h3 className="font-semibold">{t.customTopicCard}</h3>
                       <p className="text-sm text-white/40">
-                        输入你想写的话题，AI 帮你评估潜力和打磨角度
+                        {t.customTopicCardDesc}
                       </p>
                     </div>
                   </div>
@@ -490,7 +486,7 @@ function CreatePageInner() {
                       onKeyDown={(e) =>
                         e.key === "Enter" && handleTopicEntry()
                       }
-                      placeholder="例：普通人怎么靠副业月入过万"
+                      placeholder={t.customTopicPlaceholder}
                       className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors"
                     />
                     <button
@@ -498,7 +494,7 @@ function CreatePageInner() {
                       disabled={!topicInput.trim()}
                       className="px-5 py-2.5 bg-white text-black rounded-xl text-sm font-semibold hover:bg-white/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
-                      评估
+                      {t.evaluateBtn}
                     </button>
                   </div>
                 </div>
@@ -509,16 +505,16 @@ function CreatePageInner() {
                       📄
                     </div>
                     <div className="space-y-1">
-                      <h3 className="font-semibold">粘贴素材</h3>
+                      <h3 className="font-semibold">{t.pasteMaterialCard}</h3>
                       <p className="text-sm text-white/40">
-                        粘贴已有文章、笔记或资料，AI 提炼选题并在内容生成时深度融合素材
+                        {t.pasteMaterialCardDesc}
                       </p>
                     </div>
                   </div>
                   <textarea
                     value={materialInput}
                     onChange={(e) => setMaterialInput(e.target.value)}
-                    placeholder="粘贴你的素材内容（文章、笔记、灵感片段、采访记录等）..."
+                    placeholder={t.pasteMaterialPlaceholder}
                     rows={5}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 transition-colors resize-none"
                   />
@@ -527,7 +523,7 @@ function CreatePageInner() {
                     disabled={!materialInput.trim()}
                     className="w-full py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm font-medium hover:bg-white/10 hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    分析素材 →
+                    {t.analyzeMaterial}
                   </button>
                 </div>
               </div>
@@ -549,38 +545,38 @@ function CreatePageInner() {
                   }}
                   className="text-xs text-white/30 hover:text-white/60 transition-colors"
                 >
-                  ← 返回
+                  {t.backBtn}
                 </button>
-                <h1 className="text-xl font-bold">选题评估</h1>
+                <h1 className="text-xl font-bold">{t.evaluateStep}</h1>
               </div>
 
               {materialInput.trim() && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/8 border border-purple-500/15 rounded-xl">
                   <span className="text-purple-400/70 text-xs">📄</span>
                   <p className="text-xs text-purple-300/60">
-                    素材已添加，生成内容时将深度融合
+                    {t.materialAdded}
                   </p>
                 </div>
               )}
 
               <div className="p-5 bg-white/[0.02] border border-white/8 rounded-2xl space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40">选题标题</label>
+                  <label className="text-xs text-white/40">{t.topicTitleLabel}</label>
                   <input
                     type="text"
                     value={evalTitle}
                     onChange={(e) => setEvalTitle(e.target.value)}
-                    placeholder="输入或编辑选题标题"
+                    placeholder={t.topicTitleEditPlaceholder}
                     className="w-full bg-transparent border-b border-white/10 pb-2 text-base font-semibold focus:outline-none focus:border-white/30 transition-colors"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40">创作角度</label>
+                  <label className="text-xs text-white/40">{t.angleLabel}</label>
                   <input
                     type="text"
                     value={evalAngle}
                     onChange={(e) => setEvalAngle(e.target.value)}
-                    placeholder="AI 推荐角度或自行填写"
+                    placeholder={t.angleHint}
                     className="w-full bg-transparent border-b border-white/10 pb-2 text-sm focus:outline-none focus:border-white/30 transition-colors text-white/80"
                   />
                 </div>
@@ -589,16 +585,16 @@ function CreatePageInner() {
               {evaluating && (
                 <div className="flex items-center gap-3 p-5 bg-white/[0.02] border border-white/8 rounded-2xl">
                   <div className="w-4 h-4 border border-white/20 border-t-white rounded-full animate-spin flex-shrink-0" />
-                  <p className="text-sm text-white/40">AI 正在评估选题潜力...</p>
+                  <p className="text-sm text-white/40">{t.evaluatingTopic}</p>
                 </div>
               )}
 
               {evaluation && !evaluating && (
                 <div className="p-5 bg-white/[0.02] border border-white/8 rounded-2xl space-y-5">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">AI 评估报告</h3>
+                    <h3 className="text-sm font-semibold">{t.aiEvalReport}</h3>
                     <span className="text-xs text-white/30">
-                      综合分{" "}
+                      {t.overallScore}{" "}
                       {Math.round(
                         (evaluation.evaluation.viralScore +
                           evaluation.evaluation.differentiationScore +
@@ -610,15 +606,15 @@ function CreatePageInner() {
                   <div className="space-y-3">
                     <ScoreBar
                       score={evaluation.evaluation.viralScore}
-                      label="爆款潜力"
+                      label={t.viralPotential}
                     />
                     <ScoreBar
                       score={evaluation.evaluation.differentiationScore}
-                      label="差异化程度"
+                      label={t.differentiationScore}
                     />
                     <ScoreBar
                       score={evaluation.evaluation.commercialScore}
-                      label="商业价值"
+                      label={t.commercialValue}
                     />
                   </div>
                   <p className="text-sm text-white/60 leading-relaxed">
@@ -626,7 +622,7 @@ function CreatePageInner() {
                   </p>
                   {evaluation.recommendedPlatforms.length > 0 && (
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-white/30">推荐平台：</span>
+                      <span className="text-xs text-white/30">{t.recommendedPlatformsLabel}</span>
                       {evaluation.recommendedPlatforms.map((p) => (
                         <button
                           key={p}
@@ -647,9 +643,7 @@ function CreatePageInner() {
 
               {entryMode === "hot" && !evaluating && !evaluation && (
                 <div className="p-5 bg-white/[0.02] border border-white/8 rounded-2xl">
-                  <p className="text-sm text-white/50">
-                    ✓ 来自热点选题，已有 AI 推荐角度。确认标题和角度后，点击开始访谈。
-                  </p>
+                  <p className="text-sm text-white/50">{t.hotTopicNote}</p>
                 </div>
               )}
 
@@ -658,7 +652,7 @@ function CreatePageInner() {
                 disabled={!evalTitle.trim()}
                 className="w-full py-3.5 bg-white text-black rounded-xl font-semibold text-sm hover:bg-white/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                开始深度访谈 →
+                {t.startInterview}
               </button>
             </div>
           )}
@@ -671,10 +665,10 @@ function CreatePageInner() {
                   onClick={() => setStep("evaluate")}
                   className="text-xs text-white/30 hover:text-white/60 transition-colors"
                 >
-                  ← 返回
+                  {t.backBtn}
                 </button>
                 <div>
-                  <h1 className="text-xl font-bold">深度访谈</h1>
+                  <h1 className="text-xl font-bold">{t.interviewStep}</h1>
                   <p className="text-xs text-white/30 mt-0.5 truncate max-w-xs">
                     {evalTitle}
                   </p>
@@ -683,12 +677,10 @@ function CreatePageInner() {
 
               {materialInput.trim() && (
                 <div className="flex items-start gap-3 px-4 py-3 bg-purple-500/8 border border-purple-500/15 rounded-xl">
-                  <span className="text-purple-400/70 text-sm flex-shrink-0">
-                    📄
-                  </span>
+                  <span className="text-purple-400/70 text-sm flex-shrink-0">📄</span>
                   <div>
                     <p className="text-xs text-purple-300/70 font-medium">
-                      素材已加载
+                      {t.materialLoaded}
                     </p>
                     <p className="text-xs text-purple-300/40 mt-0.5 line-clamp-2">
                       {materialInput.slice(0, 120)}...
@@ -700,9 +692,9 @@ function CreatePageInner() {
               {/* Platform & Type selector */}
               <div className="p-4 bg-white/[0.02] border border-white/8 rounded-2xl space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40">发布平台</label>
+                  <label className="text-xs text-white/40">{t.publishPlatform}</label>
                   <div className="flex flex-wrap gap-2">
-                    {PLATFORMS.map((p) => (
+                    {PLATFORMS_ZH.map((p) => (
                       <button
                         key={p}
                         onClick={() => setPlatform(p)}
@@ -712,21 +704,17 @@ function CreatePageInner() {
                             : "border border-white/10 text-white/40 hover:border-white/30 hover:text-white/70"
                         }`}
                       >
-                        {p}
+                        {locale === "en" ? PLATFORMS_EN[p] ?? p : p}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40">内容类型</label>
+                  <label className="text-xs text-white/40">{t.contentTypeLabel}</label>
                   <div className="flex gap-3">
                     {[
-                      { value: "graphic", label: "图文", desc: "适合图文发布" },
-                      {
-                        value: "script",
-                        label: "口播逐字稿",
-                        desc: "3-5分钟，约700字",
-                      },
+                      { value: "graphic", label: t.graphicType, desc: t.graphicDesc },
+                      { value: "script", label: t.scriptType, desc: t.scriptDesc },
                     ].map((ct) => (
                       <button
                         key={ct.value}
@@ -748,9 +736,7 @@ function CreatePageInner() {
               {loadingQuestions ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-4">
                   <div className="w-6 h-6 border border-white/20 border-t-white rounded-full animate-spin" />
-                  <p className="text-sm text-white/30">
-                    AI 正在用第一性原理设计问题...
-                  </p>
+                  <p className="text-sm text-white/30">{t.generatingQuestions}</p>
                 </div>
               ) : questionsError ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-4 border border-red-500/20 bg-red-500/5 rounded-2xl">
@@ -759,14 +745,14 @@ function CreatePageInner() {
                     onClick={loadQuestions}
                     className="px-5 py-2 bg-white text-black rounded-xl text-sm font-semibold hover:bg-white/90 transition-colors"
                   >
-                    重新生成问题
+                    {t.regenerateQuestions}
                   </button>
                 </div>
               ) : questions.length > 0 ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-white/40">
-                      已回答 {answeredCount}/{questions.length} 个问题（至少回答 2 个）
+                      {t.answeredCountFn(answeredCount, questions.length)}
                     </p>
                     <div className="flex gap-1.5">
                       {questions.map((_, i) => (
@@ -801,7 +787,7 @@ function CreatePageInner() {
                           </p>
                           {q.hint && (
                             <p className="text-xs text-white/30 mt-1">
-                              提示：{q.hint}
+                              {t.hintPrefix} {q.hint}
                             </p>
                           )}
                         </div>
@@ -809,7 +795,7 @@ function CreatePageInner() {
                       <textarea
                         value={qaAnswers[idx]?.answer || ""}
                         onChange={(e) => updateAnswer(idx, e.target.value)}
-                        placeholder="分享你的真实想法..."
+                        placeholder={t.shareThoughts}
                         rows={3}
                         className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/20 transition-colors resize-none"
                       />
@@ -820,15 +806,13 @@ function CreatePageInner() {
 
               {limitReached && (
                 <div className="border border-yellow-500/20 bg-yellow-500/5 rounded-xl p-4 space-y-2 text-center">
-                  <p className="text-sm text-yellow-400/80">今日生成次数已达上限</p>
-                  <p className="text-xs text-white/30">
-                    免费版每日 3 次，升级 Pro 无限使用
-                  </p>
+                  <p className="text-sm text-yellow-400/80">{t.dailyLimitReached}</p>
+                  <p className="text-xs text-white/30">{t.dailyLimitDesc}</p>
                   <Link
                     href="/pricing"
                     className="inline-block text-xs bg-white text-black px-5 py-2 rounded-full font-semibold hover:bg-white/90 transition-colors mt-1"
                   >
-                    升级 Pro
+                    {t.upgradePro2}
                   </Link>
                 </div>
               )}
@@ -843,12 +827,12 @@ function CreatePageInner() {
                 {generatingContent ? (
                   <span className="flex items-center justify-center gap-2">
                     <span className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin inline-block" />
-                    AI 正在生成专属内容...
+                    {t.generatingContentBtn}
                   </span>
                 ) : answeredCount < 2 ? (
-                  `请至少回答 2 个问题（已回答 ${answeredCount} 个）`
+                  t.minAnswersFn(answeredCount)
                 ) : (
-                  `生成专属内容 ✦${materialInput.trim() ? " · 含素材融合" : ""}`
+                  t.generateContentFn(!!materialInput.trim())
                 )}
               </button>
             </div>
@@ -864,32 +848,32 @@ function CreatePageInner() {
                     onClick={() => setStep("interview")}
                     className="text-xs text-white/30 hover:text-white/60 transition-colors"
                   >
-                    ← 返回访谈
+                    {t.backToInterview}
                   </button>
                   <div>
                     <h2 className="text-sm font-semibold truncate max-w-xs">
                       {evalTitle}
                     </h2>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-white/30">{platform}</span>
+                      <span className="text-xs text-white/30">{locale === "en" ? PLATFORMS_EN[platform] ?? platform : platform}</span>
                       <span className="text-white/10">·</span>
                       <span className="text-xs text-white/30">
-                        {contentType === "graphic" ? "图文" : "口播稿"}
+                        {contentType === "graphic" ? t.graphicType : t.scriptType}
                       </span>
                       <span className="text-white/10">·</span>
                       {saveStatus === "saving" && (
                         <span className="text-xs text-white/30 flex items-center gap-1">
                           <span className="w-2.5 h-2.5 border border-white/20 border-t-white/50 rounded-full animate-spin inline-block" />
-                          保存中...
+                          {t.savingStatus}
                         </span>
                       )}
                       {saveStatus === "saved" && (
                         <span className="text-xs text-green-400/70">
-                          ✓ 已自动保存
+                          {t.autoSaved}
                         </span>
                       )}
                       {saveStatus === "idle" && contentId && (
-                        <span className="text-xs text-white/20">草稿已保存</span>
+                        <span className="text-xs text-white/20">{t.draftSaved}</span>
                       )}
                     </div>
                   </div>
@@ -901,13 +885,13 @@ function CreatePageInner() {
                     }}
                     className="px-3 py-1.5 border border-white/10 rounded-lg text-xs text-white/40 hover:border-white/30 hover:text-white/70 transition-colors"
                   >
-                    复制全文
+                    {t.copyFull}
                   </button>
                   <Link
                     href="/library"
                     className="px-3 py-1.5 bg-white/8 border border-white/10 rounded-lg text-xs text-white/50 hover:bg-white/12 transition-colors"
                   >
-                    查看内容库 →
+                    {t.viewLibrary}
                   </Link>
                 </div>
               </div>
@@ -919,7 +903,6 @@ function CreatePageInner() {
                   <pre className="text-sm text-white/85 leading-relaxed whitespace-pre-wrap font-sans">
                     {content}
                   </pre>
-                  {/* Regenerate button at bottom */}
                   <div className="mt-8 pt-6 border-t border-white/5">
                     <button
                       onClick={generateFullContent}
@@ -929,10 +912,10 @@ function CreatePageInner() {
                       {generatingContent ? (
                         <span className="flex items-center gap-1.5">
                           <span className="w-3 h-3 border border-white/20 border-t-white/50 rounded-full animate-spin inline-block" />
-                          重新生成中...
+                          {t.regeneratingAll}
                         </span>
                       ) : (
-                        "↺ 重新生成全文"
+                        t.regenerateAll
                       )}
                     </button>
                   </div>
@@ -943,10 +926,10 @@ function CreatePageInner() {
                   {/* Chat header */}
                   <div className="px-4 py-3 border-b border-white/5 flex-shrink-0">
                     <p className="text-xs font-semibold text-white/70">
-                      ✦ AI 对话修改
+                      {t.aiChatTitle}
                     </p>
                     <p className="text-[11px] text-white/30 mt-0.5">
-                      告诉 AI 你想怎么改，内容实时更新
+                      {t.aiChatSubtitle}
                     </p>
                   </div>
 
@@ -955,9 +938,9 @@ function CreatePageInner() {
                     {chatMessages.length === 0 && (
                       <div className="text-center py-8">
                         <p className="text-xs text-white/20 leading-relaxed">
-                          内容已生成并自动保存为草稿
+                          {t.contentGeneratedNote}
                           <br />
-                          在下方输入你的修改意见
+                          {t.enterRevisionBelow}
                         </p>
                       </div>
                     )}
@@ -996,7 +979,7 @@ function CreatePageInner() {
                   {/* Quick revision chips */}
                   <div className="px-4 py-2 border-t border-white/5 flex-shrink-0">
                     <div className="flex flex-wrap gap-1.5">
-                      {QUICK_REVISIONS.map((r) => (
+                      {t.quickRevisions.map((r) => (
                         <button
                           key={r}
                           onClick={() => sendChatMessage(r)}
@@ -1017,7 +1000,7 @@ function CreatePageInner() {
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={handleChatKeyDown}
-                        placeholder="描述你的修改需求... (Enter 发送)"
+                        placeholder={t.chatPlaceholder}
                         rows={2}
                         disabled={isChatLoading}
                         className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/20 focus:outline-none focus:border-white/25 transition-colors resize-none disabled:opacity-40"
@@ -1027,7 +1010,7 @@ function CreatePageInner() {
                         disabled={!chatInput.trim() || isChatLoading}
                         className="px-3 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed self-end"
                       >
-                        发送
+                        {t.sendBtn}
                       </button>
                     </div>
                   </div>

@@ -6,6 +6,8 @@ import { creatorProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 
+export const maxDuration = 60;
+
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 export async function POST(req: NextRequest) {
@@ -15,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
-    const { topic, angle } = await req.json();
+    const { topic, angle, locale } = await req.json();
     if (!topic) {
       return NextResponse.json({ error: "请提供话题" }, { status: 400 });
     }
@@ -28,8 +30,39 @@ export async function POST(req: NextRequest) {
 
     const profile = profiles[0];
     const dna = profile?.dna;
+    const isEn = locale === "en";
 
-    const prompt = `你是一位用「第一性原理」挖掘创作者深层思考的内容教练。
+    const prompt = isEn
+      ? `You are a content coach who uses first-principles thinking to uncover a creator's deepest insights.
+
+The creator wants to create content about "${topic}"${angle ? ` (angle: ${angle})` : ""}.
+Creator background: ${dna?.persona || "content creator"}, style: ${dna?.languageStyle || "authentic"}
+
+Design 6 progressive questions using first principles to:
+1. Uncover the creator's genuine thoughts and unique perspective
+2. Find personal experiences and concrete examples that support their view
+3. Identify unconventional angles that give the content a soul
+
+Question layers:
+- Layer 1 "Essence": Ask about the root cause or fundamental truth of this topic
+- Layer 2 "Experience": Uncover a personal experience or turning point
+- Layer 3 "Thesis": Find the one core argument the creator most wants to make
+- Layer 4 "Counter-intuitive": Challenge conventional wisdom, find your different take
+- Layer 5 "Evidence": Find a specific story/case/data point to support the argument
+- Layer 6 "Value": What's the one thing readers should walk away with?
+
+Output a JSON array (exactly 6 questions):
+[
+  {
+    "id": "q1",
+    "layer": "Essence",
+    "question": "Question (conversational, like a friend chatting, under 20 words)",
+    "hint": "Answer prompt (under 10 words)"
+  }
+]
+
+Output JSON array only, no other text.`
+      : `你是一位用「第一性原理」挖掘创作者深层思考的内容教练。
 
 创作者想围绕「${topic}」${angle ? `（角度：${angle}）` : ""}进行内容创作。
 创作者背景：${dna?.persona || "内容创作者"}，风格：${dna?.languageStyle || "真实个性"}

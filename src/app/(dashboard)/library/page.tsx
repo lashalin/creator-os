@@ -22,17 +22,18 @@ interface ChatMessage {
 }
 
 const PLATFORM_FILTERS_ZH = ["全部", "小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
-const PLATFORM_FILTERS_EN = ["All", "小红书", "公众号", "X", "Instagram", "YouTube", "抖音"];
+const PLATFORM_FILTERS_EN = ["All", "Xiaohongshu", "WeChat Official", "X", "Instagram", "YouTube", "TikTok"];
 
-const QUICK_REVISIONS = [
-  "开头更抓眼球",
-  "语言更口语化",
-  "结尾更有力",
-  "加入真实故事",
-  "精简20%",
-  "加入数据支撑",
-  "更符合平台风格",
-];
+const PLATFORM_NAME_EN: Record<string, string> = {
+  "小红书": "Xiaohongshu",
+  "公众号": "WeChat Official",
+  "X": "X",
+  "Instagram": "Instagram",
+  "YouTube": "YouTube",
+  "抖音": "TikTok",
+};
+
+// QUICK_REVISIONS now comes from t.quickRevisions
 
 export default function LibraryPage() {
   const { t, locale } = useLanguage();
@@ -84,13 +85,22 @@ export default function LibraryPage() {
     setConfirmDeleteId(null);
   };
 
+  // Map EN display name back to ZH DB value for filtering
+  const PLATFORM_NAME_ZH: Record<string, string> = Object.fromEntries(
+    Object.entries(PLATFORM_NAME_EN).map(([zh, en]) => [en, zh])
+  );
+  const platformFilterZH =
+    platformFilter === "all"
+      ? "all"
+      : PLATFORM_NAME_ZH[platformFilter] ?? platformFilter;
+
   const filtered = items.filter((item) => {
     const typeMatch =
       tab === "all" ||
       (tab === "graphic" && item.contentType === "graphic") ||
       (tab === "script" && item.contentType === "script");
     const platformMatch =
-      platformFilter === "all" || item.platform === platformFilter;
+      platformFilterZH === "all" || item.platform === platformFilterZH;
     return typeMatch && platformMatch;
   });
 
@@ -141,7 +151,7 @@ export default function LibraryPage() {
         setConfirmDeleteId(null);
       }
     } catch {
-      alert("删除失败，请重试");
+      alert(t.deleteFailed);
     } finally {
       setDeletingId(null);
     }
@@ -170,6 +180,7 @@ export default function LibraryPage() {
           topic: selectedItem.title,
           platform: selectedItem.platform,
           contentType: selectedItem.contentType,
+          locale,
         }),
       });
 
@@ -189,7 +200,7 @@ export default function LibraryPage() {
 
         const aiMsg: ChatMessage = {
           role: "assistant",
-          content: data.assistantMessage || "已根据你的要求修改",
+          content: data.assistantMessage || t.aiModified,
         };
         setChatMessages([...newMessages, aiMsg]);
 
@@ -205,13 +216,13 @@ export default function LibraryPage() {
       } else {
         setChatMessages([
           ...newMessages,
-          { role: "assistant", content: "修改失败，请重试" },
+          { role: "assistant", content: t.modifyFailed },
         ]);
       }
     } catch {
       setChatMessages([
         ...newMessages,
-        { role: "assistant", content: "网络错误，请重试" },
+        { role: "assistant", content: t.networkError },
       ]);
     } finally {
       setIsChatLoading(false);
@@ -234,9 +245,9 @@ export default function LibraryPage() {
   };
 
   const TABS = [
-    { value: "all", label: locale === "zh" ? "全部" : "All" },
+    { value: "all", label: t.allTab },
     { value: "graphic", label: t.graphic },
-    { value: "script", label: locale === "zh" ? "口播稿" : "Scripts" },
+    { value: "script", label: t.scriptsTab },
   ];
 
   return (
@@ -314,8 +325,8 @@ export default function LibraryPage() {
                   {items.length === 0
                     ? t.emptyLibrary
                     : locale === "zh"
-                    ? "没有符合筛选条件的内容"
-                    : "No content matches the filters"}
+                    ? t.noFilteredContent
+                    : t.noFilteredContent}
                 </p>
                 {items.length === 0 && (
                   <Link
@@ -343,7 +354,7 @@ export default function LibraryPage() {
                           </p>
                           <div className="flex gap-2">
                             <span className="text-xs text-white/30">
-                              {item.platform}
+                              {locale === "en" ? PLATFORM_NAME_EN[item.platform] ?? item.platform : item.platform}
                             </span>
                             <span className="text-xs text-white/20">·</span>
                             <span className="text-xs text-white/30">
@@ -376,7 +387,7 @@ export default function LibraryPage() {
                             disabled={deletingId === item.id}
                             className="px-2 py-0.5 rounded text-[10px] bg-red-500/80 text-white hover:bg-red-500 transition-colors disabled:opacity-50"
                           >
-                            {deletingId === item.id ? "..." : "确认"}
+                            {deletingId === item.id ? "..." : t.confirmBtn}
                           </button>
                           <button
                             onClick={(e) => {
@@ -385,7 +396,7 @@ export default function LibraryPage() {
                             }}
                             className="px-2 py-0.5 rounded text-[10px] border border-white/10 text-white/40 hover:text-white/70 transition-colors"
                           >
-                            取消
+                            {t.cancel}
                           </button>
                         </div>
                       ) : (
@@ -395,7 +406,7 @@ export default function LibraryPage() {
                             handleDelete(item.id);
                           }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-white/25 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          title="删除"
+                          title={t.deleteBtn}
                         >
                           <svg
                             width="12"
@@ -439,7 +450,7 @@ export default function LibraryPage() {
                       {selectedItem.title}
                     </h2>
                     <div className="flex gap-3 text-xs text-white/30">
-                      <span>{selectedItem.platform}</span>
+                      <span>{locale === "en" ? PLATFORM_NAME_EN[selectedItem.platform] ?? selectedItem.platform : selectedItem.platform}</span>
                       <span>
                         {selectedItem.contentType === "graphic"
                           ? t.graphic
@@ -452,11 +463,11 @@ export default function LibraryPage() {
                       {saveStatus === "saving" && (
                         <span className="text-white/30 flex items-center gap-1">
                           <span className="w-2 h-2 border border-white/20 border-t-white/50 rounded-full animate-spin inline-block" />
-                          保存中
+                          {t.savingShort}
                         </span>
                       )}
                       {saveStatus === "saved" && (
-                        <span className="text-green-400/70">✓ 已保存</span>
+                        <span className="text-green-400/70">{t.savedShort}</span>
                       )}
                     </div>
                   </div>
@@ -491,9 +502,9 @@ export default function LibraryPage() {
                     >
                       {confirmDeleteId === selectedItem.id
                         ? deletingId === selectedItem.id
-                          ? "删除中..."
-                          : "确认删除"
-                        : "删除"}
+                          ? t.deletingBtn
+                          : t.confirmDeleteFull
+                        : t.deleteBtn}
                     </button>
                   </div>
                 </div>
@@ -511,10 +522,10 @@ export default function LibraryPage() {
                 {/* Chat header */}
                 <div className="px-4 py-3 border-b border-white/5 flex-shrink-0">
                   <p className="text-xs font-semibold text-white/70">
-                    ✦ AI 对话修改
+                    {t.aiChatTitle}
                   </p>
                   <p className="text-[11px] text-white/30 mt-0.5">
-                    直接告诉 AI 怎么改，内容自动保存
+                    {t.aiChatLibSubtitle}
                   </p>
                 </div>
 
@@ -523,9 +534,9 @@ export default function LibraryPage() {
                   {chatMessages.length === 0 && (
                     <div className="text-center py-6">
                       <p className="text-xs text-white/20 leading-relaxed">
-                        选择快捷指令或输入修改意见
+                        {t.chatLibEmptyLine1}
                         <br />
-                        AI 将直接修改内容并保存
+                        {t.chatLibEmptyLine2}
                       </p>
                     </div>
                   )}
@@ -573,7 +584,7 @@ export default function LibraryPage() {
                 {/* Quick revision chips */}
                 <div className="px-4 py-2 border-t border-white/5 flex-shrink-0">
                   <div className="flex flex-wrap gap-1.5">
-                    {QUICK_REVISIONS.map((r) => (
+                    {t.quickRevisions.map((r) => (
                       <button
                         key={r}
                         onClick={() => sendChatMessage(r)}
@@ -593,7 +604,7 @@ export default function LibraryPage() {
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={handleChatKeyDown}
-                      placeholder="描述修改需求... (Enter 发送)"
+                      placeholder={t.chatLibPlaceholder}
                       rows={2}
                       disabled={isChatLoading}
                       className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/20 focus:outline-none focus:border-white/25 transition-colors resize-none disabled:opacity-40"
@@ -603,7 +614,7 @@ export default function LibraryPage() {
                       disabled={!chatInput.trim() || isChatLoading}
                       className="px-3 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed self-end"
                     >
-                      发送
+                        {t.sendBtn}
                     </button>
                   </div>
                 </div>
@@ -614,8 +625,8 @@ export default function LibraryPage() {
               <span className="text-5xl text-white/5">◉</span>
               <p className="text-sm text-white/20">
                 {locale === "zh"
-                  ? "从左侧选择一篇内容查看和编辑"
-                  : "Select an item from the left to view and edit"}
+                  ? t.selectToView
+                  : t.selectToView}
               </p>
             </div>
           )}
