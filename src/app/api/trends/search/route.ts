@@ -146,288 +146,145 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
   }
 }
 
-// ─── Hacker News via Algolia API (free, no auth, works from Vercel) ──────────
+// ─── Reddit via PullPush.io (no auth) + public JSON fallback ─────────────────
+// PullPush.io is the community-built Pushshift successor — free, no API key needed
 
-async function searchHN(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
-  try {
-    // Convert timeRange to a Unix timestamp filter
-    const nowSec = Math.floor(Date.now() / 1000);
-    const secondsMap = { "24h": 86400, "48h": 172800, "7d": 604800 };
-    const since = nowSec - secondsMap[timeRange];
+type RedditSubmission = {
+  title?: string;
+  url?: string;
+  permalink?: string;
+  score?: number;
+  num_comments?: number;
+  subreddit?: string;
+};
 
-    // Algolia HN search API — completely free, no auth, works from any server
-    const url =
-      `https://hn.algolia.com/api/v1/search?` +
-      `query=${encodeURIComponent(keyword)}` +
-      `&tags=story` +
-      `&numericFilters=created_at_i>${since},points>0` +
-      `&hitsPerPage=10` +
-      `&attributesToRetrieve=title,url,points,num_comments,objectID`;
-
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) {
-      console.warn(`[searchHN] Algolia error: ${res.status}`);
-      return {
-        platform: "hn",
-        label: "Hacker News",
-        icon: "🟠",
-        items: [],
-        error: `HN API 错误 (${res.status})`,
-      };
-    }
-
-    const data = await res.json();
-
-    type HNHit = {
-      title?: string;
-      url?: string;
-      objectID: string;
-      points?: number;
-      num_comments?: number;
-    };
-
-    const hits: HNHit[] = data?.hits ?? [];
-
-    const items: ContentItem[] = hits
-      .filter((h) => h.title && h.title.length > 3)
-      .map((h) => {
-        const points = h.points ?? 0;
-        const comments = h.num_comments ?? 0;
-
-        let heat: string | undefined;
-        if (points >= 500) {
-          heat = `${points}↑ · ${comments}💬`;
-        } else if (points >= 100) {
-          heat = `${points}↑ · ${comments}💬`;
-        } else if (points > 0) {
-          heat = `${points}↑`;
-        }
-
-        return {
-          title: h.title ?? "",
-          heat,
-          url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
-        };
-      });
-
-    if (items.length > 0) {
-      return {
-        platform: "hn",
-        label: "Hacker News",
-        icon: "🟠",
-        items,
-        dataType: "realViews",
-      };
-    }
-
-    // If strict filter returned nothing, retry without time filter
-    const fallbackUrl =
-      `https://hn.algolia.com/api/v1/search?` +
-      `query=${encodeURIComponent(keyword)}` +
-      `&tags=story` +
-      `&hitsPerPage=10` +
-      `&attributesToRetrieve=title,url,points,num_comments,objectID`;
-
-    const res2 = await fetch(fallbackUrl, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (res2.ok) {
-      const data2 = await res2.json();
-      const hits2: HNHit[] = data2?.hits ?? [];
-      const items2: ContentItem[] = hits2
-        .filter((h) => h.title && h.title.length > 3)
-        .map((h) => ({
-          title: h.title ?? "",
-          heat: h.points ? `${h.points}↑` : undefined,
-          url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
-        }));
-
-      if (items2.length > 0) {
-        return {
-          platform: "hn",
-          label: "Hacker News",
-          icon: "🟠",
-          items: items2,
-          dataType: "realViews",
-        };
-      }
-    }
-
-    return {
-      platform: "hn",
-      label: "Hacker News",
-      icon: "🟠",
-      items: [],
-      error: `未找到"${keyword}"相关讨论，可尝试英文关键词`,
-    };
-  } catch (err) {
-    console.error("[searchHN] error:", err);
-    return {
-      platform: "hn",
-      label: "Hacker News",
-      icon: "🟠",
-      items: [],
-      error: "HN 搜索暂时不可用，请稍后重试",
-    };
-  }
-}
-
-// ─── Reddit via OAuth2 client credentials ────────────────────────────────────
-
-// Cache token in memory (reused across requests in the same function instance)
-let redditTokenCache: { token: string; expiresAt: number } | null = null;
-
-async function getRedditToken(): Promise<string | null> {
-  const clientId = process.env.REDDIT_CLIENT_ID;
-  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
-
-  // Return cached token if still valid (5 min buffer)
-  if (redditTokenCache && Date.now() < redditTokenCache.expiresAt - 300_000) {
-    return redditTokenCache.token;
-  }
-
-  try {
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-    const res = await fetch("https://www.reddit.com/api/v1/access_token", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "CreatorOS/1.0 by CreatorOS",
-      },
-      body: "grant_type=client_credentials",
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.access_token) return null;
-
-    redditTokenCache = {
-      token: data.access_token,
-      expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
-    };
-    return data.access_token;
-  } catch {
-    return null;
-  }
+function formatRedditHeat(score: number, comments: number): string | undefined {
+  if (score >= 10000) return `${(score / 1000).toFixed(0)}k↑ · ${comments}💬`;
+  if (score >= 1000) return `${(score / 1000).toFixed(1)}k↑ · ${comments}💬`;
+  if (score > 0) return `${score}↑ · ${comments}💬`;
+  return undefined;
 }
 
 async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
-  const clientId = process.env.REDDIT_CLIENT_ID;
-  if (!clientId) {
-    return {
-      platform: "reddit",
-      label: "Reddit",
-      icon: "🟧",
-      items: [],
-      error: "Reddit API not configured — add REDDIT_CLIENT_ID & REDDIT_CLIENT_SECRET",
-    };
+  const secondsMap = { "24h": 86400, "48h": 172800, "7d": 604800 };
+  const afterSec = Math.floor(Date.now() / 1000) - secondsMap[timeRange];
+
+  // ── Strategy 1: PullPush.io (Pushshift successor, no auth, cloud-friendly) ──
+  try {
+    const ppUrl =
+      `https://api.pullpush.io/reddit/search/submission/?` +
+      `q=${encodeURIComponent(keyword)}` +
+      `&sort=desc&size=15` +
+      `&after=${afterSec}`;
+
+    const res = await fetch(ppUrl, {
+      headers: {
+        "User-Agent": "CreatorOS/1.0",
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const hits: RedditSubmission[] = data?.data ?? [];
+
+      const items: ContentItem[] = hits
+        .filter((h) => h.title && h.title.length > 3)
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, 10)
+        .map((h) => ({
+          title: h.title ?? "",
+          heat: formatRedditHeat(h.score ?? 0, h.num_comments ?? 0),
+          url: h.url && !h.url.startsWith("https://www.reddit.com")
+            ? h.url
+            : h.permalink
+            ? `https://www.reddit.com${h.permalink}`
+            : undefined,
+        }))
+        .filter((i) => i.title.length > 3);
+
+      if (items.length > 0) {
+        return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
+      }
+
+      // PullPush returned empty for time range — retry without time filter
+      const ppFallbackUrl =
+        `https://api.pullpush.io/reddit/search/submission/?` +
+        `q=${encodeURIComponent(keyword)}&sort=desc&size=15`;
+
+      const res2 = await fetch(ppFallbackUrl, {
+        headers: { "User-Agent": "CreatorOS/1.0", Accept: "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (res2.ok) {
+        const data2 = await res2.json();
+        const hits2: RedditSubmission[] = data2?.data ?? [];
+        const items2: ContentItem[] = hits2
+          .filter((h) => h.title && h.title.length > 3)
+          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+          .slice(0, 10)
+          .map((h) => ({
+            title: h.title ?? "",
+            heat: formatRedditHeat(h.score ?? 0, h.num_comments ?? 0),
+            url: h.permalink ? `https://www.reddit.com${h.permalink}` : undefined,
+          }))
+          .filter((i) => i.title.length > 3);
+
+        if (items2.length > 0) {
+          return { platform: "reddit", label: "Reddit", icon: "🟧", items: items2, dataType: "realViews" };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[searchReddit PullPush] error:", err);
   }
 
+  // ── Strategy 2: Reddit public JSON API (no auth, needs User-Agent) ──────────
   try {
-    const token = await getRedditToken();
-    if (!token) {
-      return {
-        platform: "reddit",
-        label: "Reddit",
-        icon: "🟧",
-        items: [],
-        error: "Reddit auth failed — check REDDIT_CLIENT_ID & REDDIT_CLIENT_SECRET",
-      };
-    }
-
     const tMap = { "24h": "day", "48h": "week", "7d": "week" };
-    const t = tMap[timeRange];
-    const url =
-      `https://oauth.reddit.com/search?` +
-      `q=${encodeURIComponent(keyword)}&sort=top&t=${t}&limit=15&type=link&raw_json=1`;
+    const rdUrl =
+      `https://www.reddit.com/search.json?` +
+      `q=${encodeURIComponent(keyword)}&sort=top&t=${tMap[timeRange]}&limit=15&raw_json=1`;
 
-    const res = await fetch(url, {
+    const res = await fetch(rdUrl, {
       headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "CreatorOS/1.0 by CreatorOS",
+        "User-Agent": "CreatorOS/1.0 (content creation tool)",
         Accept: "application/json",
       },
       signal: AbortSignal.timeout(10000),
     });
 
-    if (!res.ok) {
-      return {
-        platform: "reddit",
-        label: "Reddit",
-        icon: "🟧",
-        items: [],
-        error: `Reddit API error (${res.status})`,
-      };
+    if (res.ok) {
+      const data = await res.json();
+      const posts: { data: RedditSubmission }[] = data?.data?.children ?? [];
+
+      const items: ContentItem[] = posts
+        .filter((p) => p.data?.title && p.data.title.length > 3)
+        .slice(0, 10)
+        .map((p) => ({
+          title: p.data.title ?? "",
+          heat: formatRedditHeat(p.data.score ?? 0, p.data.num_comments ?? 0),
+          url: p.data.permalink ? `https://www.reddit.com${p.data.permalink}` : undefined,
+        }))
+        .filter((i) => i.title.length > 3);
+
+      if (items.length > 0) {
+        return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
+      }
     }
-
-    const data = await res.json();
-
-    type RedditPost = {
-      data: {
-        title?: string;
-        permalink?: string;
-        score?: number;
-        num_comments?: number;
-        subreddit?: string;
-      };
-    };
-
-    const posts: RedditPost[] = data?.data?.children ?? [];
-
-    const items: ContentItem[] = posts
-      .filter((p) => p.data?.title && p.data.title.length > 3)
-      .slice(0, 10)
-      .map((p) => {
-        const { title, permalink, score, num_comments } = p.data;
-        const points = score ?? 0;
-        const comments = num_comments ?? 0;
-
-        let heat: string | undefined;
-        if (points >= 10000) {
-          heat = `${(points / 1000).toFixed(0)}k↑ · ${comments}💬`;
-        } else if (points >= 1000) {
-          heat = `${(points / 1000).toFixed(1)}k↑ · ${comments}💬`;
-        } else if (points > 0) {
-          heat = `${points}↑ · ${comments}💬`;
-        }
-
-        return {
-          title: title ?? "",
-          heat,
-          url: permalink ? `https://www.reddit.com${permalink}` : undefined,
-        };
-      })
-      .filter((i) => i.title.length > 3);
-
-    if (items.length > 0) {
-      return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
-    }
-
-    return {
-      platform: "reddit",
-      label: "Reddit",
-      icon: "🟧",
-      items: [],
-      error: `No Reddit posts found for "${keyword}", try different keywords`,
-    };
   } catch (err) {
-    console.error("[searchReddit] error:", err);
-    return {
-      platform: "reddit",
-      label: "Reddit",
-      icon: "🟧",
-      items: [],
-      error: "Reddit search temporarily unavailable",
-    };
+    console.warn("[searchReddit public JSON] error:", err);
   }
+
+  return {
+    platform: "reddit",
+    label: "Reddit",
+    icon: "🟧",
+    items: [],
+    error: `No Reddit posts found for "${keyword}", try different keywords`,
+  };
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
