@@ -46,7 +46,9 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
     const sinceSec = nowSec - secondsMap[timeRange];
 
     // since_time: / until_time: with Unix timestamps are strictly enforced by TwitterAPI.io
-    const rawQuery = `${keyword} -is:retweet since_time:${sinceSec} until_time:${nowSec}`;
+    // Do NOT filter -is:retweet — retweets are often the highest-reach content
+    // min_faves:50 ensures only posts with real engagement are included
+    const rawQuery = `${keyword} min_faves:50 since_time:${sinceSec} until_time:${nowSec}`;
     const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(rawQuery)}&queryType=Top`;
 
     const res = await fetch(url, {
@@ -94,16 +96,24 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
         }
         return true;
       })
+      // Sort by viewCount desc — highest reach first
+      .sort((a, b) => (b.viewCount ?? b.likeCount ?? 0) - (a.viewCount ?? a.likeCount ?? 0))
       .slice(0, 10)
       .map((t) => {
         const views = t.viewCount ?? 0;
         const likes = t.likeCount ?? 0;
 
         let heat: string | undefined;
-        if (views >= 1_000_000) {
-          heat = `${(views / 10000).toFixed(0)}万浏览`;
+        if (views >= 100_000_000) {
+          heat = `${(views / 100_000_000).toFixed(1)}亿views`;
+        } else if (views >= 10_000_000) {
+          heat = `${(views / 10_000_000).toFixed(0)}千万views`;
+        } else if (views >= 1_000_000) {
+          heat = `${(views / 1_000_000).toFixed(1)}M views`;
         } else if (views >= 10_000) {
-          heat = `${(views / 10000).toFixed(1)}万浏览`;
+          heat = `${(views / 10_000).toFixed(1)}万views`;
+        } else if (views > 0) {
+          heat = `${views.toLocaleString()} views`;
         } else if (likes >= 1000) {
           heat = `${(likes / 1000).toFixed(1)}k♥`;
         } else if (likes > 0) {
