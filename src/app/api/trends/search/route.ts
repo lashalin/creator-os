@@ -40,16 +40,17 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
   }
 
   try {
-    // Build time filter: since:YYYY-MM-DD
-    const sinceDays = timeRange === "24h" ? 1 : timeRange === "48h" ? 2 : 7;
-    const sinceDate = daysAgo(sinceDays);
-    const rawQuery = `${keyword} -is:retweet since:${sinceDate}`;
+    // Use Unix timestamps for precise time range enforcement
+    const nowSec = Math.floor(Date.now() / 1000);
+    const secondsMap = { "24h": 86400, "48h": 172800, "7d": 604800 };
+    const sinceSec = nowSec - secondsMap[timeRange];
+
+    // since_time: / until_time: with Unix timestamps are strictly enforced by TwitterAPI.io
+    const rawQuery = `${keyword} -is:retweet since_time:${sinceSec} until_time:${nowSec}`;
     const url = `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(rawQuery)}&queryType=Top`;
 
     const res = await fetch(url, {
-      headers: {
-        "X-API-Key": apiKey,
-      },
+      headers: { "X-API-Key": apiKey },
       signal: AbortSignal.timeout(12000),
     });
 
@@ -71,6 +72,7 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
       id?: string;
       text?: string;
       url?: string;
+      createdAt?: string;
       likeCount?: number;
       retweetCount?: number;
       replyCount?: number;
@@ -83,7 +85,15 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
       data?.tweets ?? data?.data?.tweets ?? data?.data ?? [];
 
     const items: ContentItem[] = tweets
-      .filter((t) => t.text && t.text.length > 10)
+      .filter((t) => {
+        if (!t.text || t.text.length <= 10) return false;
+        // Client-side date guard: discard tweets outside the time window
+        if (t.createdAt) {
+          const tweetSec = Math.floor(new Date(t.createdAt).getTime() / 1000);
+          if (tweetSec < sinceSec || tweetSec > nowSec) return false;
+        }
+        return true;
+      })
       .slice(0, 10)
       .map((t) => {
         const views = t.viewCount ?? 0;
@@ -146,8 +156,9 @@ async function searchX(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"):
   }
 }
 
-// ─── Reddit via PullPush.io (no auth) + public JSON fallback ─────────────────
-// PullPush.io is the community-built Pushshift successor — free, no API key needed
+// ─── Reddit Search ────────────────────────────────────────────────────────────
+// Strategy 1: Reddit OAuth2 (client credentials) — most reliable from cloud servers
+// Strategy 2: PullPush.io (Pushshift successor, no auth, cloud-friendly)
 
 type RedditSubmission = {
   title?: string;
@@ -155,6 +166,7 @@ type RedditSubmission = {
   permalink?: string;
   score?: number;
   num_comments?: number;
+  created_utc?: number;
   subreddit?: string;
 };
 
@@ -165,23 +177,107 @@ function formatRedditHeat(score: number, comments: number): string | undefined {
   return undefined;
 }
 
+// Reddit OAuth2 token cache
+let redditTokenCache: { token: string; expiresAt: number } | null = null;
+
+async function getRedditToken(clientId: string, clientSecret: string): Promise<string> {
+  const now = Date.now();
+  if (redditTokenCache && redditTokenCache.expiresAt > now + 60000) {
+    return redditTokenCache.token;
+  }
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "CreatorOS/1.0",
+    },
+    body: "grant_type=client_credentials",
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Reddit auth failed: ${res.status}`);
+  const data = await res.json();
+  if (!data.access_token) throw new Error("No access_token in Reddit response");
+  redditTokenCache = {
+    token: data.access_token,
+    expiresAt: now + (data.expires_in ?? 3600) * 1000,
+  };
+  return data.access_token;
+}
+
 async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "7d"): Promise<PlatformResult> {
   const secondsMap = { "24h": 86400, "48h": 172800, "7d": 604800 };
-  const afterSec = Math.floor(Date.now() / 1000) - secondsMap[timeRange];
+  const nowSec = Math.floor(Date.now() / 1000);
+  const afterSec = nowSec - secondsMap[timeRange];
 
-  // ── Strategy 1: PullPush.io (Pushshift successor, no auth, cloud-friendly) ──
+  // ── Strategy 1: Reddit OAuth2 (most reliable from Vercel/cloud) ─────────────
+  const clientId = process.env.REDDIT_CLIENT_ID;
+  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
+
+  if (clientId && clientSecret) {
+    try {
+      const token = await getRedditToken(clientId, clientSecret);
+      // Reddit's t= param: hour|day|week|month|year|all
+      // 24h → day, 48h → week (then filter client-side), 7d → week
+      const tMap = { "24h": "day", "48h": "week", "7d": "week" };
+      const searchUrl =
+        `https://oauth.reddit.com/search?` +
+        `q=${encodeURIComponent(keyword)}&sort=top&t=${tMap[timeRange]}&limit=25&type=link`;
+
+      const res = await fetch(searchUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "User-Agent": "CreatorOS/1.0",
+        },
+        signal: AbortSignal.timeout(12000),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const posts: { data: RedditSubmission }[] = data?.data?.children ?? [];
+
+        const items: ContentItem[] = posts
+          .filter((p) => {
+            if (!p.data?.title || p.data.title.length <= 3) return false;
+            // For 48h, Reddit has no exact tier — filter client-side
+            if (timeRange === "48h" && p.data.created_utc) {
+              return p.data.created_utc >= afterSec;
+            }
+            return true;
+          })
+          .slice(0, 10)
+          .map((p) => ({
+            title: p.data.title ?? "",
+            heat: formatRedditHeat(p.data.score ?? 0, p.data.num_comments ?? 0),
+            url: p.data.permalink
+              ? `https://www.reddit.com${p.data.permalink}`
+              : undefined,
+          }))
+          .filter((i) => i.title.length > 3);
+
+        if (items.length > 0) {
+          return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
+        }
+      } else {
+        console.warn("[searchReddit OAuth2] status:", res.status);
+      }
+    } catch (err) {
+      console.warn("[searchReddit OAuth2] error:", err);
+    }
+  }
+
+  // ── Strategy 2: PullPush.io (no auth, cloud-friendly, Pushshift successor) ──
   try {
+    // sort_type=score to get highest-scored posts in the time window
     const ppUrl =
       `https://api.pullpush.io/reddit/search/submission/?` +
       `q=${encodeURIComponent(keyword)}` +
-      `&sort=desc&size=15` +
-      `&after=${afterSec}`;
+      `&sort_type=score&sort=desc&size=25` +
+      `&after=${afterSec}&before=${nowSec}`;
 
     const res = await fetch(ppUrl, {
-      headers: {
-        "User-Agent": "CreatorOS/1.0",
-        Accept: "application/json",
-      },
+      headers: { "User-Agent": "CreatorOS/1.0", Accept: "application/json" },
       signal: AbortSignal.timeout(12000),
     });
 
@@ -196,86 +292,50 @@ async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "
         .map((h) => ({
           title: h.title ?? "",
           heat: formatRedditHeat(h.score ?? 0, h.num_comments ?? 0),
-          url: h.url && !h.url.startsWith("https://www.reddit.com")
-            ? h.url
-            : h.permalink
-            ? `https://www.reddit.com${h.permalink}`
-            : undefined,
+          url: h.permalink ? `https://www.reddit.com${h.permalink}` : undefined,
         }))
         .filter((i) => i.title.length > 3);
 
       if (items.length > 0) {
         return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
       }
-
-      // PullPush returned empty for time range — retry without time filter
-      const ppFallbackUrl =
-        `https://api.pullpush.io/reddit/search/submission/?` +
-        `q=${encodeURIComponent(keyword)}&sort=desc&size=15`;
-
-      const res2 = await fetch(ppFallbackUrl, {
-        headers: { "User-Agent": "CreatorOS/1.0", Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (res2.ok) {
-        const data2 = await res2.json();
-        const hits2: RedditSubmission[] = data2?.data ?? [];
-        const items2: ContentItem[] = hits2
-          .filter((h) => h.title && h.title.length > 3)
-          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-          .slice(0, 10)
-          .map((h) => ({
-            title: h.title ?? "",
-            heat: formatRedditHeat(h.score ?? 0, h.num_comments ?? 0),
-            url: h.permalink ? `https://www.reddit.com${h.permalink}` : undefined,
-          }))
-          .filter((i) => i.title.length > 3);
-
-        if (items2.length > 0) {
-          return { platform: "reddit", label: "Reddit", icon: "🟧", items: items2, dataType: "realViews" };
-        }
-      }
+    } else {
+      console.warn("[searchReddit PullPush] status:", res.status);
     }
   } catch (err) {
     console.warn("[searchReddit PullPush] error:", err);
   }
 
-  // ── Strategy 2: Reddit public JSON API (no auth, needs User-Agent) ──────────
+  // ── Strategy 3: PullPush without time filter (wider net, still score-sorted) ─
   try {
-    const tMap = { "24h": "day", "48h": "week", "7d": "week" };
-    const rdUrl =
-      `https://www.reddit.com/search.json?` +
-      `q=${encodeURIComponent(keyword)}&sort=top&t=${tMap[timeRange]}&limit=15&raw_json=1`;
+    const ppUrl2 =
+      `https://api.pullpush.io/reddit/search/submission/?` +
+      `q=${encodeURIComponent(keyword)}&sort_type=score&sort=desc&size=10`;
 
-    const res = await fetch(rdUrl, {
-      headers: {
-        "User-Agent": "CreatorOS/1.0 (content creation tool)",
-        Accept: "application/json",
-      },
+    const res2 = await fetch(ppUrl2, {
+      headers: { "User-Agent": "CreatorOS/1.0", Accept: "application/json" },
       signal: AbortSignal.timeout(10000),
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      const posts: { data: RedditSubmission }[] = data?.data?.children ?? [];
-
-      const items: ContentItem[] = posts
-        .filter((p) => p.data?.title && p.data.title.length > 3)
+    if (res2.ok) {
+      const data2 = await res2.json();
+      const hits2: RedditSubmission[] = data2?.data ?? [];
+      const items2: ContentItem[] = hits2
+        .filter((h) => h.title && h.title.length > 3)
         .slice(0, 10)
-        .map((p) => ({
-          title: p.data.title ?? "",
-          heat: formatRedditHeat(p.data.score ?? 0, p.data.num_comments ?? 0),
-          url: p.data.permalink ? `https://www.reddit.com${p.data.permalink}` : undefined,
+        .map((h) => ({
+          title: h.title ?? "",
+          heat: formatRedditHeat(h.score ?? 0, h.num_comments ?? 0),
+          url: h.permalink ? `https://www.reddit.com${h.permalink}` : undefined,
         }))
         .filter((i) => i.title.length > 3);
 
-      if (items.length > 0) {
-        return { platform: "reddit", label: "Reddit", icon: "🟧", items, dataType: "realViews" };
+      if (items2.length > 0) {
+        return { platform: "reddit", label: "Reddit", icon: "🟧", items: items2, dataType: "realViews" };
       }
     }
   } catch (err) {
-    console.warn("[searchReddit public JSON] error:", err);
+    console.warn("[searchReddit PullPush fallback] error:", err);
   }
 
   return {
@@ -283,7 +343,9 @@ async function searchReddit(keyword: string, timeRange: "24h" | "48h" | "7d" = "
     label: "Reddit",
     icon: "🟧",
     items: [],
-    error: `No Reddit posts found for "${keyword}", try different keywords`,
+    error: !clientId
+      ? "Reddit credentials not configured — add REDDIT_CLIENT_ID & REDDIT_CLIENT_SECRET in Vercel env"
+      : `No Reddit posts found for "${keyword}", try different keywords`,
   };
 }
 
